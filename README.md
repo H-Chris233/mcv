@@ -39,6 +39,8 @@ Rust:
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo build -p mcv-uniffi
+cargo run -p mcv-bindgen -- target/debug/libmcv_uniffi.so bindings/kotlin
 ```
 
 Android:

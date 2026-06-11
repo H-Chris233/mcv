@@ -10,6 +10,12 @@ rust-version.workspace = true
 mcv-crypto = { path = "../mcv-crypto" }
 mcv-format = { path = "../mcv-format" }
 mcv-shamir = { path = "../mcv-shamir" }
+rand.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+rand_chacha.workspace = true
 
 [lints]
 workspace = true

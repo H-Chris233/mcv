@@ -14,3 +14,5 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - run: cargo build -p mcv-uniffi
+      - run: cargo run -p mcv-bindgen -- target/debug/libmcv_uniffi.so /tmp/mcv-bindings

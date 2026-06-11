@@ -1,7 +1,25 @@
 # Card Payload v1
 
-Status: placeholder for M1.
+Status: M1 implemented in Rust.
 
-The intended Card Payload v1 stores project magic, version, vault ID, scheme ID, threshold, total, share index, algorithm identifiers, card salt, card nonce, and encrypted share bytes.
+Card Payload v1 is fixed-order CBOR array data. It stores:
 
-M0 only defines crate boundaries and does not freeze the binary encoding.
+```text
+[
+  magic = "MCV1",
+  version = 1,
+  vault_id: bstr(16),
+  scheme_id: bstr(16),
+  threshold: u8,
+  total: u8,
+  share_index: u8,
+  kdf_id: u8,
+  aead_id: u8,
+  kdf_params,
+  card_salt: bstr(16),
+  card_nonce: bstr(24),
+  encrypted_share: bstr
+]
+```
+
+The authenticated card header is the same array without `encrypted_share`. The encrypted share plaintext is the serialized GF(256) Shamir share from the `sharks` crate, whose first byte is the share index.
