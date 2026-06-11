@@ -1,8 +1,12 @@
 package app.multicardvault
 
 import android.os.Bundle
+import android.nfc.NfcAdapter
+import android.nfc.Tag
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,17 +29,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import app.multicardvault.core.RustMcvCore
 import app.multicardvault.data.McvDatabase
 import app.multicardvault.data.RoomVaultRepository
 import app.multicardvault.features.create.CreateVaultFormState
+import app.multicardvault.features.create.NfcCommand
 import app.multicardvault.features.create.CreateVaultUiState
 import app.multicardvault.features.create.CreateVaultUseCase
 import app.multicardvault.features.create.CreateVaultViewModel
+import app.multicardvault.features.unlock.UnlockVaultUseCase
+import app.multicardvault.nfc.NdefNfcRepository
+import app.multicardvault.nfc.NfcRepository
 import app.multicardvault.security.KeystoreDeviceSecretRepository
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 object McvAppIdentity {
     const val Name = "Multi-Card Vault"
@@ -48,27 +58,90 @@ class MainActivity : ComponentActivity() {
         McvDatabase.open(applicationContext)
     }
 
+    private val nfcAdapter: NfcAdapter? by lazy {
+        NfcAdapter.getDefaultAdapter(this)
+    }
+
+    private val nfcRepository: NfcRepository by lazy {
+        NdefNfcRepository()
+    }
+
+    private val nfcBusy = AtomicBoolean(false)
+
+    private val viewModel: CreateVaultViewModel by lazy {
+        val dao = database.vaultDao()
+        val core = RustMcvCore()
+        val vaultRepository = RoomVaultRepository(dao)
+        val deviceSecretRepository = KeystoreDeviceSecretRepository(dao)
+        val factory = CreateVaultViewModel.Factory(
+            createVaultUseCase = CreateVaultUseCase(
+                core = core,
+                vaultRepository = vaultRepository,
+                deviceSecretRepository = deviceSecretRepository,
+            ),
+            unlockVaultUseCase = UnlockVaultUseCase(
+                core = core,
+                vaultRepository = vaultRepository,
+                deviceSecretRepository = deviceSecretRepository,
+            ),
+        )
+        ViewModelProvider(this, factory)[CreateVaultViewModel::class.java]
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val dao = database.vaultDao()
-        val createVaultUseCase = CreateVaultUseCase(
-            core = RustMcvCore(),
-            vaultRepository = RoomVaultRepository(dao),
-            deviceSecretRepository = KeystoreDeviceSecretRepository(dao),
-        )
-        val factory = CreateVaultViewModel.Factory(createVaultUseCase)
-
         setContent {
-            MultiCardVaultApp(factory)
+            MultiCardVaultApp(viewModel)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        nfcAdapter?.takeIf { it.isEnabled }?.enableReaderMode(
+            this,
+            ::onTagDiscovered,
+            NfcReaderFlags,
+            null,
+        )
+    }
+
+    override fun onPause() {
+        nfcAdapter?.disableReaderMode(this)
+        super.onPause()
+    }
+
+    private fun onTagDiscovered(tag: Tag) {
+        if (!nfcBusy.compareAndSet(false, true)) return
+
+        lifecycleScope.launch {
+            try {
+                val command = viewModel.nextNfcCommand() ?: return@launch
+                val result = withContext(Dispatchers.IO) {
+                    when (command) {
+                        NfcCommand.Read -> nfcRepository.readPayload(tag)
+                        is NfcCommand.Write -> nfcRepository.writePayload(tag, command.payload)
+                    }
+                }
+                viewModel.onNfcResult(result)
+            } finally {
+                nfcBusy.set(false)
+            }
+        }
+    }
+
+    companion object {
+        private const val NfcReaderFlags =
+            NfcAdapter.FLAG_READER_NFC_A or
+                NfcAdapter.FLAG_READER_NFC_B or
+                NfcAdapter.FLAG_READER_NFC_F or
+                NfcAdapter.FLAG_READER_NFC_V
     }
 }
 
 @Composable
 fun MultiCardVaultApp(
-    viewModelFactory: ViewModelProvider.Factory? = null,
+    viewModel: CreateVaultViewModel,
 ) {
-    val viewModel: CreateVaultViewModel = viewModel(factory = viewModelFactory)
     val form by viewModel.form.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -172,7 +245,7 @@ private fun CreateVaultStatus(uiState: CreateVaultUiState) {
         CreateVaultUiState.Editing -> Box(modifier = Modifier.fillMaxWidth())
         CreateVaultUiState.Creating -> Text("正在调用 Rust core 生成 Vault Blob 和 Card Payload。")
         is CreateVaultUiState.Failed -> Text(uiState.message)
-        is CreateVaultUiState.Created -> Card(modifier = Modifier.fillMaxWidth()) {
+        is CreateVaultUiState.WritingCards -> Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -181,7 +254,44 @@ private fun CreateVaultStatus(uiState: CreateVaultUiState) {
                 Text("名称：${uiState.summary.displayName}")
                 Text("Vault ID：${uiState.summary.vaultIdHex.take(16)}...")
                 Text("门限：${uiState.summary.threshold}-of-${uiState.summary.total}")
-                Text("待写入卡片 payload：${uiState.summary.cardPayloadCount}")
+                Text("写卡进度：${uiState.writtenCount} / ${uiState.total}")
+                Text("下一张卡：${uiState.nextCardNumber}")
+                Text(uiState.message)
+            }
+        }
+
+        is CreateVaultUiState.ReadingCards -> Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("读取卡片解锁", style = MaterialTheme.typography.titleMedium)
+                Text("Vault ID：${uiState.summary.vaultIdHex.take(16)}...")
+                Text("读取进度：${uiState.readCount} / ${uiState.threshold}")
+                Text(uiState.message)
+            }
+        }
+
+        is CreateVaultUiState.Unlocking -> Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("正在解锁", style = MaterialTheme.typography.titleMedium)
+                Text("读取进度：${uiState.readCount} / ${uiState.threshold}")
+                Text("正在调用 Rust core 恢复密钥并解密 Vault Blob。")
+            }
+        }
+
+        is CreateVaultUiState.Unlocked -> Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Vault 已解锁", style = MaterialTheme.typography.titleMedium)
+                Text("Vault ID：${uiState.unlocked.vaultIdHex.take(16)}...")
+                Text("明文结构大小：${uiState.unlocked.plaintextSize} 字节")
+                Text("M3 仅验证解锁能力，暂不显示或编辑 Vault Plaintext。")
             }
         }
     }

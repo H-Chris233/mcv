@@ -14,6 +14,11 @@ data class CreatedVaultSummary(
     val cardPayloadCount: Int,
 )
 
+data class CreatedVaultSession(
+    val summary: CreatedVaultSummary,
+    val cardPayloads: List<ByteArray>,
+)
+
 class CreateVaultUseCase(
     private val core: McvCore,
     private val vaultRepository: VaultRepository,
@@ -24,7 +29,7 @@ class CreateVaultUseCase(
         password: String,
         threshold: Int = DefaultThreshold,
         total: Int = DefaultTotal,
-    ): CreatedVaultSummary {
+    ): CreatedVaultSession {
         val normalizedDisplayName = displayName.trim()
         require(normalizedDisplayName.isNotEmpty()) { "vault display name is required" }
         require(password.isNotEmpty()) { "password is required" }
@@ -64,12 +69,15 @@ class CreateVaultUseCase(
                 throw error
             }
 
-            return CreatedVaultSummary(
-                vaultIdHex = vaultIdHex,
-                displayName = normalizedDisplayName,
-                threshold = threshold,
-                total = total,
-                cardPayloadCount = created.cardPayloads.size,
+            return CreatedVaultSession(
+                summary = CreatedVaultSummary(
+                    vaultIdHex = vaultIdHex,
+                    displayName = normalizedDisplayName,
+                    threshold = threshold,
+                    total = total,
+                    cardPayloadCount = created.cardPayloads.size,
+                ),
+                cardPayloads = created.cardPayloads,
             )
         } finally {
             deviceSecret.fill(0)
