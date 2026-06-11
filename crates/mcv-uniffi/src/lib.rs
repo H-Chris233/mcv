@@ -135,6 +135,12 @@ pub fn mcv_project_status() -> String {
     mcv_core::project_identity().status.to_owned()
 }
 
+/// Returns encoded empty `VaultPlaintextV1` bytes through the binding boundary.
+#[uniffi::export]
+pub fn empty_vault_plaintext() -> Result<Vec<u8>, McvFfiError> {
+    mcv_core::empty_vault_plaintext().map_err(McvFfiError::from)
+}
+
 /// Creates a vault through the binding boundary.
 #[uniffi::export]
 pub fn create_vault(request: CreateVaultRequest) -> Result<CreateVaultResponse, McvFfiError> {
@@ -250,5 +256,11 @@ mod tests {
     fn binding_boundary_exposes_project_identity() {
         assert_eq!(mcv_project_name(), "Multi-Card Vault");
         assert_eq!(mcv_project_status(), "experimental and unaudited");
+    }
+
+    #[test]
+    fn binding_boundary_exposes_empty_plaintext() -> Result<(), McvFfiError> {
+        assert!(!empty_vault_plaintext()?.is_empty());
+        Ok(())
     }
 }

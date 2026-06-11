@@ -10,15 +10,16 @@
 
 Multi-Card Vault (MCV) is an Android-only, local-first encrypted vault experiment. It uses multiple NFC cards as threshold key-share containers, combined with a user password and an Android device secret.
 
-## M0 Status
+## Current Status
 
-This repository currently contains the project skeleton only:
+This repository currently contains:
 
 - Rust multi-crate workspace.
-- Minimal Android Compose app scaffold.
+- Rust M1 protocol core for create/unlock/update flows.
+- Minimal Android Compose app with ongoing M2 Rust integration.
 - Initial documentation, ADRs, and CI workflows.
 
-M0 does not implement real cryptography, Shamir sharing, NFC read/write, Android Keystore access, Room persistence, or vault unlock flows.
+M2 does not implement NFC read/write or the full vault entry editor yet.
 
 ## Repository Layout
 
@@ -46,11 +47,14 @@ cargo run -p mcv-bindgen -- target/debug/libmcv_uniffi.so bindings/kotlin
 Android:
 
 ```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+cargo install cargo-ndk --locked
+sdkmanager "ndk;27.2.12479018"
 ./gradlew -p android test
 ./gradlew -p android assembleDebug
 ```
 
-Android verification requires Gradle, Android SDK platform 35, and dependency resolution access.
+Android verification requires Gradle, Android SDK platform 35, NDK 27.2.12479018, Rust Android targets, `cargo-ndk`, and dependency resolution access. The Gradle build compiles the Rust UniFFI library instead of storing native `.so` files in git.
 
 ## License
 

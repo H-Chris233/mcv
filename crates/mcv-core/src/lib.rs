@@ -173,6 +173,15 @@ pub const fn project_identity() -> ProjectIdentity {
     }
 }
 
+/// Returns an encoded empty `VaultPlaintextV1`.
+pub fn empty_vault_plaintext() -> Result<Vec<u8>, McvError> {
+    VaultPlaintextV1 {
+        entries: Vec::new(),
+    }
+    .encode()
+    .map_err(|_error| McvError::InvalidVaultPlaintext)
+}
+
 /// Creates a vault using production randomness and default KDF parameters.
 pub fn create_vault(request: CreateVaultRequest) -> Result<CreateVaultResponse, McvError> {
     let mut rng = OsRng;
@@ -583,6 +592,16 @@ mod tests {
         assert_eq!(identity.kdf_id, 1);
         assert_eq!(identity.aead_id, 1);
         assert_eq!(identity.sss_id, 1);
+    }
+
+    #[test]
+    fn empty_vault_plaintext_returns_valid_encoded_plaintext() -> Result<(), McvError> {
+        let encoded = empty_vault_plaintext()?;
+        let decoded =
+            VaultPlaintextV1::decode(&encoded).map_err(|_error| McvError::InvalidVaultPlaintext)?;
+
+        assert!(decoded.entries.is_empty());
+        Ok(())
     }
 
     #[test]

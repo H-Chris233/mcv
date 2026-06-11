@@ -721,6 +721,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -737,6 +739,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_mcv_uniffi_checksum_func_create_vault(
+): Short
+fun uniffi_mcv_uniffi_checksum_func_empty_vault_plaintext(
 ): Short
 fun uniffi_mcv_uniffi_checksum_func_mcv_project_name(
 ): Short
@@ -792,6 +796,8 @@ internal interface UniffiLib : Library {
 
     // FFI functions
     fun uniffi_mcv_uniffi_fn_func_create_vault(`request`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_mcv_uniffi_fn_func_empty_vault_plaintext(uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun uniffi_mcv_uniffi_fn_func_mcv_project_name(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -928,6 +934,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_mcv_uniffi_checksum_func_create_vault() != 34948.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_mcv_uniffi_checksum_func_empty_vault_plaintext() != 17050.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_mcv_uniffi_checksum_func_mcv_project_name() != 3038.toShort()) {
@@ -1771,6 +1780,19 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
 }
     )
     }
+
+
+        /**
+         * Returns encoded empty `VaultPlaintextV1` bytes through the binding boundary.
+         */
+    @Throws(McvFfiException::class) fun `emptyVaultPlaintext`(): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCallWithError(McvFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_mcv_uniffi_fn_func_empty_vault_plaintext(
+        _status)
+}
+    )
+    }
     
 
         /**
@@ -1822,5 +1844,4 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
     )
     }
     
-
 
