@@ -1,0 +1,23 @@
+[workspace]
+members = [
+    "crates/mcv-core",
+    "crates/mcv-crypto",
+    "crates/mcv-format",
+    "crates/mcv-shamir",
+    "crates/mcv-uniffi",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/example/multi-card-vault"
+rust-version = "1.80"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

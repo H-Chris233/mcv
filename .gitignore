@@ -1,0 +1,19 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Android / Gradle
+/.gradle/
+/.android-sdk/
+/android/.gradle/
+/android/build/
+/android/app/build/
+local.properties
+
+# IDE
+/.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
