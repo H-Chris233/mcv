@@ -2,16 +2,22 @@ package app.multicardvault.core
 
 import app.multicardvault.uniffi.CreateVaultRequest
 import app.multicardvault.uniffi.McvFfiException
+import app.multicardvault.uniffi.UnlockVaultRequest
 import app.multicardvault.uniffi.createVault as ffiCreateVault
 import app.multicardvault.uniffi.emptyVaultPlaintext as ffiEmptyVaultPlaintext
 import app.multicardvault.uniffi.mcvProjectName
 import app.multicardvault.uniffi.mcvProjectStatus
+import app.multicardvault.uniffi.unlockVault as ffiUnlockVault
 
 data class RustCreateVaultResult(
     val vaultId: ByteArray,
     val schemeId: ByteArray,
     val vaultBlob: ByteArray,
     val cardPayloads: List<ByteArray>,
+)
+
+data class RustUnlockVaultResult(
+    val plaintext: ByteArray,
 )
 
 interface McvCore {
@@ -25,6 +31,13 @@ interface McvCore {
         deviceSecret: ByteArray,
         initialPlaintext: ByteArray,
     ): RustCreateVaultResult
+
+    fun unlockVault(
+        password: String,
+        deviceSecret: ByteArray,
+        vaultBlob: ByteArray,
+        cardPayloads: List<ByteArray>,
+    ): RustUnlockVaultResult
 }
 
 class RustMcvCore : McvCore {
@@ -61,6 +74,30 @@ class RustMcvCore : McvCore {
             schemeId = response.schemeId,
             vaultBlob = response.vaultBlob,
             cardPayloads = response.cardPayloads,
+        )
+    }
+
+    override fun unlockVault(
+        password: String,
+        deviceSecret: ByteArray,
+        vaultBlob: ByteArray,
+        cardPayloads: List<ByteArray>,
+    ): RustUnlockVaultResult {
+        val response = try {
+            ffiUnlockVault(
+                UnlockVaultRequest(
+                    password = password,
+                    deviceSecret = deviceSecret,
+                    vaultBlob = vaultBlob,
+                    cardPayloads = cardPayloads,
+                ),
+            )
+        } catch (error: McvFfiException) {
+            throw McvCoreException("Rust core rejected vault unlock", error)
+        }
+
+        return RustUnlockVaultResult(
+            plaintext = response.plaintext,
         )
     }
 }

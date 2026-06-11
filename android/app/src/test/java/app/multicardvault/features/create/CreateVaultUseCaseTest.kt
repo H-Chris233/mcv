@@ -2,6 +2,7 @@ package app.multicardvault.features.create
 
 import app.multicardvault.core.McvCore
 import app.multicardvault.core.RustCreateVaultResult
+import app.multicardvault.core.RustUnlockVaultResult
 import app.multicardvault.data.VaultRecord
 import app.multicardvault.data.VaultRepository
 import app.multicardvault.security.DeviceSecretRepository
@@ -23,17 +24,19 @@ class CreateVaultUseCaseTest {
             deviceSecretRepository = deviceSecretRepository,
         )
 
-        val summary = useCase(
+        val session = useCase(
             displayName = "  Primary  ",
             password = "passphrase",
             threshold = 3,
             total = 5,
         )
 
+        val summary = session.summary
         assertEquals("Primary", summary.displayName)
         assertEquals(3, summary.threshold)
         assertEquals(5, summary.total)
         assertEquals(5, summary.cardPayloadCount)
+        assertEquals(5, session.cardPayloads.size)
         assertEquals("01010101010101010101010101010101", summary.vaultIdHex)
         assertEquals(1, vaultRepository.records.size)
         assertEquals("Primary", vaultRepository.records.single().displayName)
@@ -91,6 +94,13 @@ private class FakeMcvCore : McvCore {
             cardPayloads = List(total) { byteArrayOf(it.toByte()) },
         )
     }
+
+    override fun unlockVault(
+        password: String,
+        deviceSecret: ByteArray,
+        vaultBlob: ByteArray,
+        cardPayloads: List<ByteArray>,
+    ): RustUnlockVaultResult = RustUnlockVaultResult(byteArrayOf(9))
 }
 
 private class FakeVaultRepository(

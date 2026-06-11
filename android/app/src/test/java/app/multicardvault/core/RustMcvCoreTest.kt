@@ -30,4 +30,26 @@ class RustMcvCoreTest {
         assertTrue(result.vaultBlob.isNotEmpty())
         assertTrue(result.cardPayloads.all { it.isNotEmpty() })
     }
+
+    @Test
+    fun unlockVaultThroughUniffiReturnsPlaintext() {
+        val password = "correct horse battery staple"
+        val deviceSecret = ByteArray(32) { 7 }
+        val created = core.createVault(
+            password = password,
+            threshold = 2,
+            total = 3,
+            deviceSecret = deviceSecret,
+            initialPlaintext = core.emptyVaultPlaintext(),
+        )
+
+        val unlocked = core.unlockVault(
+            password = password,
+            deviceSecret = deviceSecret,
+            vaultBlob = created.vaultBlob,
+            cardPayloads = created.cardPayloads.take(2),
+        )
+
+        assertTrue(unlocked.plaintext.isNotEmpty())
+    }
 }
