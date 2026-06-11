@@ -1,12 +1,15 @@
 package app.multicardvault.features.unlock
 
 import app.multicardvault.core.McvCore
+import app.multicardvault.core.toStableHex
 import app.multicardvault.data.VaultRepository
+import app.multicardvault.features.vault.VaultEntry
 import app.multicardvault.security.DeviceSecretRepository
 
 data class UnlockedVaultSummary(
     val vaultIdHex: String,
     val plaintextSize: Int,
+    val entries: List<VaultEntry>,
 )
 
 class UnlockVaultUseCase(
@@ -34,9 +37,19 @@ class UnlockVaultUseCase(
                 cardPayloads = cardPayloads,
             ).plaintext
             return try {
+                val decoded = core.decodeVaultPlaintext(plaintext)
                 UnlockedVaultSummary(
                     vaultIdHex = vaultIdHex,
                     plaintextSize = plaintext.size,
+                    entries = decoded.entries.map { entry ->
+                        VaultEntry(
+                            idHex = entry.id.toStableHex(),
+                            title = entry.title,
+                            content = entry.content,
+                            createdAt = entry.createdAt,
+                            updatedAt = entry.updatedAt,
+                        )
+                    },
                 )
             } finally {
                 plaintext.fill(0)

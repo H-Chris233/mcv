@@ -4,9 +4,12 @@ import app.multicardvault.MainDispatcherRule
 import app.multicardvault.core.McvCore
 import app.multicardvault.core.RustCreateVaultResult
 import app.multicardvault.core.RustUnlockVaultResult
+import app.multicardvault.core.RustUpdateVaultResult
+import app.multicardvault.core.RustVaultPlaintext
 import app.multicardvault.data.VaultRecord
 import app.multicardvault.data.VaultRepository
 import app.multicardvault.features.unlock.UnlockVaultUseCase
+import app.multicardvault.features.vault.UpdateVaultUseCase
 import app.multicardvault.nfc.NfcCardResult
 import app.multicardvault.security.DeviceSecretRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -71,13 +74,48 @@ class CreateVaultViewModelTest {
         val state = viewModel.uiState.value as CreateVaultUiState.Unlocked
         assertEquals("01010101010101010101010101010101", state.unlocked.vaultIdHex)
         assertEquals(2, state.unlocked.plaintextSize)
+        assertTrue(state.unlocked.entries.isEmpty())
+    }
+
+    @Test
+    fun addingEntryPersistsUpdatedVaultBlob() = runTest(mainDispatcherRule.dispatcher) {
+        val harness = testHarness()
+        val viewModel = harness.viewModel
+        viewModel.updatePassword("passphrase")
+        viewModel.createVault()
+        advanceUntilIdle()
+        writeAllCards(viewModel)
+
+        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(10)))
+        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(11)))
+        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(12)))
+        advanceUntilIdle()
+
+        viewModel.updateEntryTitle("First")
+        viewModel.updateEntryContent("Secret content")
+        viewModel.saveEntryDraft()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as CreateVaultUiState.Unlocked
+        assertEquals("条目已保存。", state.message)
+        assertEquals(1, state.unlocked.entries.size)
+        assertEquals("First", state.unlocked.entries.single().title)
+        assertEquals("Secret content", state.unlocked.entries.single().content)
+        assertEquals(1, state.unlocked.plaintextSize)
+        assertTrue(state.draft.title.isEmpty())
+        assertEquals(listOf(1), harness.core.encodedEntryCounts)
+        assertEquals(listOf(byteArrayOf(99).toList()), harness.vaultRepository.savedVaultBlobs.map { it.toList() })
     }
 
     private fun testViewModel(): CreateVaultViewModel {
+        return testHarness().viewModel
+    }
+
+    private fun testHarness(): ViewModelHarness {
         val core = ViewModelFakeMcvCore()
         val vaultRepository = ViewModelFakeVaultRepository()
         val deviceSecretRepository = ViewModelFakeDeviceSecretRepository()
-        return CreateVaultViewModel(
+        val viewModel = CreateVaultViewModel(
             createVaultUseCase = CreateVaultUseCase(
                 core = core,
                 vaultRepository = vaultRepository,
@@ -88,7 +126,19 @@ class CreateVaultViewModelTest {
                 vaultRepository = vaultRepository,
                 deviceSecretRepository = deviceSecretRepository,
             ),
+            updateVaultUseCase = UpdateVaultUseCase(
+                core = core,
+                vaultRepository = vaultRepository,
+                deviceSecretRepository = deviceSecretRepository,
+            ),
             workDispatcher = mainDispatcherRule.dispatcher,
+            entryIdGenerator = { "03030303030303030303030303030303" },
+            clock = { 1234 },
+        )
+        return ViewModelHarness(
+            viewModel = viewModel,
+            core = core,
+            vaultRepository = vaultRepository,
         )
     }
 
@@ -101,12 +151,27 @@ class CreateVaultViewModelTest {
     }
 }
 
+private data class ViewModelHarness(
+    val viewModel: CreateVaultViewModel,
+    val core: ViewModelFakeMcvCore,
+    val vaultRepository: ViewModelFakeVaultRepository,
+)
+
 private class ViewModelFakeMcvCore : McvCore {
+    val encodedEntryCounts = mutableListOf<Int>()
+
     override fun projectName(): String = "Multi-Card Vault"
 
     override fun projectStatus(): String = "experimental and unaudited"
 
     override fun emptyVaultPlaintext(): ByteArray = byteArrayOf(9)
+
+    override fun decodeVaultPlaintext(bytes: ByteArray): RustVaultPlaintext = RustVaultPlaintext(emptyList())
+
+    override fun encodeVaultPlaintext(plaintext: RustVaultPlaintext): ByteArray {
+        encodedEntryCounts += plaintext.entries.size
+        return byteArrayOf(plaintext.entries.size.toByte())
+    }
 
     override fun createVault(
         password: String,
@@ -130,10 +195,22 @@ private class ViewModelFakeMcvCore : McvCore {
         require(cardPayloads.size >= 2)
         return RustUnlockVaultResult(byteArrayOf(4, 5))
     }
+
+    override fun updateVault(
+        password: String,
+        deviceSecret: ByteArray,
+        vaultBlob: ByteArray,
+        cardPayloads: List<ByteArray>,
+        newPlaintext: ByteArray,
+    ): RustUpdateVaultResult {
+        require(newPlaintext.contentEquals(byteArrayOf(1)))
+        return RustUpdateVaultResult(byteArrayOf(99))
+    }
 }
 
 private class ViewModelFakeVaultRepository : VaultRepository {
     private val records = mutableMapOf<String, VaultRecord>()
+    val savedVaultBlobs = mutableListOf<ByteArray>()
 
     override suspend fun createVault(record: VaultRecord) {
         records[record.id] = record
@@ -142,6 +219,12 @@ private class ViewModelFakeVaultRepository : VaultRepository {
     override suspend fun getVault(id: String): VaultRecord? = records[id]
 
     override suspend fun listVaults(): List<VaultRecord> = records.values.toList()
+
+    override suspend fun updateVaultBlob(id: String, vaultBlob: ByteArray, updatedAt: Long) {
+        val record = records[id] ?: error("vault not found")
+        savedVaultBlobs += vaultBlob.copyOf()
+        records[id] = record.copy(vaultBlob = vaultBlob.copyOf(), updatedAt = updatedAt)
+    }
 
     override suspend fun deleteVault(id: String) {
         records.remove(id)

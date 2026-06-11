@@ -3,6 +3,8 @@ package app.multicardvault.features.create
 import app.multicardvault.core.McvCore
 import app.multicardvault.core.RustCreateVaultResult
 import app.multicardvault.core.RustUnlockVaultResult
+import app.multicardvault.core.RustUpdateVaultResult
+import app.multicardvault.core.RustVaultPlaintext
 import app.multicardvault.data.VaultRecord
 import app.multicardvault.data.VaultRepository
 import app.multicardvault.security.DeviceSecretRepository
@@ -79,6 +81,10 @@ private class FakeMcvCore : McvCore {
 
     override fun emptyVaultPlaintext(): ByteArray = byteArrayOf(9)
 
+    override fun decodeVaultPlaintext(bytes: ByteArray): RustVaultPlaintext = RustVaultPlaintext(emptyList())
+
+    override fun encodeVaultPlaintext(plaintext: RustVaultPlaintext): ByteArray = byteArrayOf(9)
+
     override fun createVault(
         password: String,
         threshold: Int,
@@ -101,6 +107,14 @@ private class FakeMcvCore : McvCore {
         vaultBlob: ByteArray,
         cardPayloads: List<ByteArray>,
     ): RustUnlockVaultResult = RustUnlockVaultResult(byteArrayOf(9))
+
+    override fun updateVault(
+        password: String,
+        deviceSecret: ByteArray,
+        vaultBlob: ByteArray,
+        cardPayloads: List<ByteArray>,
+        newPlaintext: ByteArray,
+    ): RustUpdateVaultResult = RustUpdateVaultResult(byteArrayOf(10))
 }
 
 private class FakeVaultRepository(
@@ -116,6 +130,12 @@ private class FakeVaultRepository(
     override suspend fun getVault(id: String): VaultRecord? = records.singleOrNull { it.id == id }
 
     override suspend fun listVaults(): List<VaultRecord> = records
+
+    override suspend fun updateVaultBlob(id: String, vaultBlob: ByteArray, updatedAt: Long) {
+        val index = records.indexOfFirst { it.id == id }
+        check(index >= 0) { "vault not found" }
+        records[index] = records[index].copy(vaultBlob = vaultBlob, updatedAt = updatedAt)
+    }
 
     override suspend fun deleteVault(id: String) {
         records.removeAll { it.id == id }

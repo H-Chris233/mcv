@@ -3,6 +3,8 @@
 
 use thiserror::Error;
 
+use mcv_format::{FormatError, VaultEntryV1, VaultPlaintextV1};
+
 /// UniFFI request to create a vault.
 #[derive(Clone, Debug, Eq, PartialEq, uniffi::Record)]
 pub struct CreateVaultRequest {
@@ -71,6 +73,28 @@ pub struct UpdateVaultRequest {
 pub struct UpdateVaultResponse {
     /// Encoded replacement `VaultBlobV1`.
     pub new_vault_blob: Vec<u8>,
+}
+
+/// UniFFI-safe plaintext vault entry.
+#[derive(Clone, Debug, Eq, PartialEq, uniffi::Record)]
+pub struct VaultPlaintextEntry {
+    /// Stable entry ID bytes.
+    pub id: Vec<u8>,
+    /// User-visible entry title.
+    pub title: String,
+    /// User-visible entry content.
+    pub content: String,
+    /// Creation timestamp.
+    pub created_at: i64,
+    /// Last update timestamp.
+    pub updated_at: i64,
+}
+
+/// UniFFI-safe plaintext vault contents.
+#[derive(Clone, Debug, Eq, PartialEq, uniffi::Record)]
+pub struct VaultPlaintext {
+    /// Entries stored in this vault.
+    pub entries: Vec<VaultPlaintextEntry>,
 }
 
 /// UniFFI-safe error surface.
@@ -162,6 +186,20 @@ pub fn update_vault(request: UpdateVaultRequest) -> Result<UpdateVaultResponse, 
     Ok(response.into())
 }
 
+/// Decodes encoded `VaultPlaintextV1` bytes into UniFFI records.
+#[uniffi::export]
+pub fn decode_vault_plaintext(bytes: Vec<u8>) -> Result<VaultPlaintext, McvFfiError> {
+    let plaintext = VaultPlaintextV1::decode(&bytes).map_err(map_plaintext_format_error)?;
+    Ok(plaintext.into())
+}
+
+/// Encodes UniFFI records as `VaultPlaintextV1` bytes.
+#[uniffi::export]
+pub fn encode_vault_plaintext(plaintext: VaultPlaintext) -> Result<Vec<u8>, McvFfiError> {
+    let plaintext: VaultPlaintextV1 = plaintext.into();
+    plaintext.encode().map_err(map_plaintext_format_error)
+}
+
 impl From<CreateVaultRequest> for mcv_core::CreateVaultRequest {
     fn from(value: CreateVaultRequest) -> Self {
         Self {
@@ -224,6 +262,50 @@ impl From<mcv_core::UpdateVaultResponse> for UpdateVaultResponse {
     }
 }
 
+impl From<VaultPlaintextEntry> for VaultEntryV1 {
+    fn from(value: VaultPlaintextEntry) -> Self {
+        Self {
+            id: value.id,
+            title: value.title,
+            content: value.content,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+impl From<VaultEntryV1> for VaultPlaintextEntry {
+    fn from(value: VaultEntryV1) -> Self {
+        Self {
+            id: value.id,
+            title: value.title,
+            content: value.content,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+impl From<VaultPlaintext> for VaultPlaintextV1 {
+    fn from(value: VaultPlaintext) -> Self {
+        Self {
+            entries: value.entries.into_iter().map(VaultEntryV1::from).collect(),
+        }
+    }
+}
+
+impl From<VaultPlaintextV1> for VaultPlaintext {
+    fn from(value: VaultPlaintextV1) -> Self {
+        Self {
+            entries: value
+                .entries
+                .into_iter()
+                .map(VaultPlaintextEntry::from)
+                .collect(),
+        }
+    }
+}
+
 impl From<mcv_core::McvError> for McvFfiError {
     fn from(value: mcv_core::McvError) -> Self {
         match value {
@@ -246,6 +328,14 @@ impl From<mcv_core::McvError> for McvFfiError {
     }
 }
 
+fn map_plaintext_format_error(error: FormatError) -> McvFfiError {
+    match error {
+        FormatError::InvalidMagic => McvFfiError::InvalidMagic,
+        FormatError::UnsupportedVersion => McvFfiError::UnsupportedVersion,
+        _ => McvFfiError::InvalidVaultPlaintext,
+    }
+}
+
 uniffi::setup_scaffolding!();
 
 #[cfg(test)]
@@ -261,6 +351,23 @@ mod tests {
     #[test]
     fn binding_boundary_exposes_empty_plaintext() -> Result<(), McvFfiError> {
         assert!(!empty_vault_plaintext()?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn binding_boundary_roundtrips_plaintext_entries() -> Result<(), McvFfiError> {
+        let plaintext = VaultPlaintext {
+            entries: vec![VaultPlaintextEntry {
+                id: vec![7; mcv_format::ID_LEN],
+                title: "entry".to_owned(),
+                content: "content".to_owned(),
+                created_at: 1,
+                updated_at: 2,
+            }],
+        };
+
+        let encoded = encode_vault_plaintext(plaintext.clone())?;
+        assert_eq!(decode_vault_plaintext(encoded)?, plaintext);
         Ok(())
     }
 }

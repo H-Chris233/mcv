@@ -39,6 +39,7 @@ import app.multicardvault.features.create.CreateVaultUiState
 import app.multicardvault.features.create.CreateVaultUseCase
 import app.multicardvault.features.create.CreateVaultViewModel
 import app.multicardvault.features.unlock.UnlockVaultUseCase
+import app.multicardvault.features.vault.UpdateVaultUseCase
 import app.multicardvault.nfc.NdefNfcRepository
 import app.multicardvault.nfc.NfcRepository
 import app.multicardvault.security.KeystoreDeviceSecretRepository
@@ -80,6 +81,11 @@ class MainActivity : ComponentActivity() {
                 deviceSecretRepository = deviceSecretRepository,
             ),
             unlockVaultUseCase = UnlockVaultUseCase(
+                core = core,
+                vaultRepository = vaultRepository,
+                deviceSecretRepository = deviceSecretRepository,
+            ),
+            updateVaultUseCase = UpdateVaultUseCase(
                 core = core,
                 vaultRepository = vaultRepository,
                 deviceSecretRepository = deviceSecretRepository,
@@ -165,7 +171,15 @@ fun MultiCardVaultApp(
                     onPasswordChange = viewModel::updatePassword,
                     onCreateClick = viewModel::createVault,
                 )
-                CreateVaultStatus(uiState)
+                CreateVaultStatus(
+                    uiState = uiState,
+                    onEntryTitleChange = viewModel::updateEntryTitle,
+                    onEntryContentChange = viewModel::updateEntryContent,
+                    onSaveEntry = viewModel::saveEntryDraft,
+                    onEditEntry = viewModel::editEntry,
+                    onDeleteEntry = viewModel::deleteEntry,
+                    onCancelEntryEdit = viewModel::cancelEntryEdit,
+                )
             }
         }
     }
@@ -240,7 +254,15 @@ private fun CreateVaultForm(
 }
 
 @Composable
-private fun CreateVaultStatus(uiState: CreateVaultUiState) {
+private fun CreateVaultStatus(
+    uiState: CreateVaultUiState,
+    onEntryTitleChange: (String) -> Unit,
+    onEntryContentChange: (String) -> Unit,
+    onSaveEntry: () -> Unit,
+    onEditEntry: (String) -> Unit,
+    onDeleteEntry: (String) -> Unit,
+    onCancelEntryEdit: () -> Unit,
+) {
     when (uiState) {
         CreateVaultUiState.Editing -> Box(modifier = Modifier.fillMaxWidth())
         CreateVaultUiState.Creating -> Text("正在调用 Rust core 生成 Vault Blob 和 Card Payload。")
@@ -291,7 +313,75 @@ private fun CreateVaultStatus(uiState: CreateVaultUiState) {
                 Text("Vault 已解锁", style = MaterialTheme.typography.titleMedium)
                 Text("Vault ID：${uiState.unlocked.vaultIdHex.take(16)}...")
                 Text("明文结构大小：${uiState.unlocked.plaintextSize} 字节")
-                Text("M3 仅验证解锁能力，暂不显示或编辑 Vault Plaintext。")
+                Text("条目数量：${uiState.unlocked.entries.size}")
+                if (uiState.unlocked.entries.isEmpty()) {
+                    Text("当前 Vault 为空。")
+                }
+                uiState.unlocked.entries.forEach { entry ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(entry.title, style = MaterialTheme.typography.titleSmall)
+                            Text(entry.content.ifBlank { "无内容" })
+                            Text("Entry ID：${entry.idHex.take(12)}...")
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { onEditEntry(entry.idHex) },
+                                    enabled = !uiState.isSaving,
+                                ) {
+                                    Text("编辑")
+                                }
+                                Button(
+                                    onClick = { onDeleteEntry(entry.idHex) },
+                                    enabled = !uiState.isSaving,
+                                ) {
+                                    Text("删除")
+                                }
+                            }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = uiState.draft.title,
+                    onValueChange = onEntryTitleChange,
+                    label = { Text(if (uiState.draft.isEditing) "编辑标题" else "新条目标题") },
+                    singleLine = true,
+                    enabled = !uiState.isSaving,
+                )
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = uiState.draft.content,
+                    onValueChange = onEntryContentChange,
+                    label = { Text(if (uiState.draft.isEditing) "编辑内容" else "新条目内容") },
+                    minLines = 3,
+                    enabled = !uiState.isSaving,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onSaveEntry,
+                        enabled = !uiState.isSaving,
+                    ) {
+                        Text(
+                            when {
+                                uiState.isSaving -> "保存中..."
+                                uiState.draft.isEditing -> "保存修改"
+                                else -> "添加条目"
+                            },
+                        )
+                    }
+                    if (uiState.draft.isEditing) {
+                        Button(
+                            onClick = onCancelEntryEdit,
+                            enabled = !uiState.isSaving,
+                        ) {
+                            Text("取消编辑")
+                        }
+                    }
+                }
+                uiState.message?.let { Text(it) }
             }
         }
     }
