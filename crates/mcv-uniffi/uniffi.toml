@@ -1,0 +1,4 @@
+[bindings.kotlin]
+package_name = "app.multicardvault.uniffi"
+cdylib_name = "mcv_uniffi"
+android = true
