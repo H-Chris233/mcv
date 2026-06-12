@@ -23,8 +23,11 @@ cargo test --workspace
 Run Android checks before submitting Android changes:
 
 ```bash
-gradle -p android test
-gradle -p android assembleDebug
+./gradlew -p android ktlintCheck
+./gradlew -p android detekt
+./gradlew -p android lintDebug
+./gradlew -p android test
+./gradlew -p android assembleDebug
 ```
 
 ## Documentation

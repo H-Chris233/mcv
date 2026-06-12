@@ -17,7 +17,11 @@ interface VaultDao {
     suspend fun listVaults(): List<VaultEntity>
 
     @Query("UPDATE vaults SET vaultBlob = :vaultBlob, updatedAt = :updatedAt WHERE id = :id")
-    suspend fun updateVaultBlob(id: String, vaultBlob: ByteArray, updatedAt: Long): Int
+    suspend fun updateVaultBlob(
+        id: String,
+        vaultBlob: ByteArray,
+        updatedAt: Long,
+    ): Int
 
     @Query("DELETE FROM vaults WHERE id = :id")
     suspend fun deleteVault(id: String)

@@ -27,29 +27,33 @@ class UnlockVaultUseCase(
         val vault = vaultRepository.getVault(vaultIdHex) ?: error("vault not found")
         require(cardPayloads.size >= vault.threshold) { "not enough card payloads" }
 
-        val deviceSecret = deviceSecretRepository.getDeviceSecret(vault.vaultId)
-            ?: error("device secret not found")
+        val deviceSecret =
+            deviceSecretRepository.getDeviceSecret(vault.vaultId)
+                ?: error("device secret not found")
         try {
-            val plaintext = core.unlockVault(
-                password = password,
-                deviceSecret = deviceSecret,
-                vaultBlob = vault.vaultBlob,
-                cardPayloads = cardPayloads,
-            ).plaintext
+            val plaintext =
+                core
+                    .unlockVault(
+                        password = password,
+                        deviceSecret = deviceSecret,
+                        vaultBlob = vault.vaultBlob,
+                        cardPayloads = cardPayloads,
+                    ).plaintext
             return try {
                 val decoded = core.decodeVaultPlaintext(plaintext)
                 UnlockedVaultSummary(
                     vaultIdHex = vaultIdHex,
                     plaintextSize = plaintext.size,
-                    entries = decoded.entries.map { entry ->
-                        VaultEntry(
-                            idHex = entry.id.toStableHex(),
-                            title = entry.title,
-                            content = entry.content,
-                            createdAt = entry.createdAt,
-                            updatedAt = entry.updatedAt,
-                        )
-                    },
+                    entries =
+                        decoded.entries.map { entry ->
+                            VaultEntry(
+                                idHex = entry.id.toStableHex(),
+                                title = entry.title,
+                                content = entry.content,
+                                createdAt = entry.createdAt,
+                                updatedAt = entry.updatedAt,
+                            )
+                        },
                 )
             } finally {
                 plaintext.fill(0)

@@ -7,8 +7,8 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+blahaj.workspace = true
 rand.workspace = true
-sharks.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

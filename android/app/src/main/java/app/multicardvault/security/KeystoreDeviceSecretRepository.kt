@@ -22,7 +22,10 @@ class KeystoreDeviceSecretRepository(
         return secret
     }
 
-    override suspend fun saveDeviceSecret(vaultId: ByteArray, deviceSecret: ByteArray) {
+    override suspend fun saveDeviceSecret(
+        vaultId: ByteArray,
+        deviceSecret: ByteArray,
+    ) {
         require(deviceSecret.size == DeviceSecretLength) { "device secret must be 32 bytes" }
 
         val vaultIdHex = vaultId.toStableHex()
@@ -63,26 +66,29 @@ class KeystoreDeviceSecretRepository(
         val keyStore = keyStore()
         keyStore.getKey(alias, null)?.let { return it as SecretKey }
 
-        val keyGenerator = KeyGenerator.getInstance(
-            KeyProperties.KEY_ALGORITHM_AES,
-            AndroidKeyStore,
-        )
-        val spec = KeyGenParameterSpec.Builder(
-            alias,
-            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-        )
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setKeySize(256)
-            .build()
+        val keyGenerator =
+            KeyGenerator.getInstance(
+                KeyProperties.KEY_ALGORITHM_AES,
+                AndroidKeyStore,
+            )
+        val spec =
+            KeyGenParameterSpec
+                .Builder(
+                    alias,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+                ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
 
         keyGenerator.init(spec)
         return keyGenerator.generateKey()
     }
 
-    private fun keyStore(): KeyStore = KeyStore.getInstance(AndroidKeyStore).apply {
-        load(null)
-    }
+    private fun keyStore(): KeyStore =
+        KeyStore.getInstance(AndroidKeyStore).apply {
+            load(null)
+        }
 
     private fun keyAlias(vaultIdHex: String): String = "mcv_device_secret_$vaultIdHex"
 

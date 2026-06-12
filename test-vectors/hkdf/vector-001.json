@@ -1,0 +1,13 @@
+{
+  "name": "hkdf-sha256-final-key-v1",
+  "generator": "cargo run -p mcv-core --example mvp_vectors",
+  "argon2id_input_phrase": "correct horse",
+  "argon2id_salt_hex": "01010101010101010101010101010101",
+  "argon2id_params": { "memory_cost_kib": 64, "time_cost": 1, "parallelism": 1 },
+  "argon2id_output_hex": "f1bbbd8a6c0b0004ff416fe71708c5c71364bc9cc803468fd3a2cc558d1ca424",
+  "master_component_hex": "0202020202020202020202020202020202020202020202020202020202020202",
+  "device_component_hex": "0303030303030303030303030303030303030303030303030303030303030303",
+  "vault_salt_hex": "04040404040404040404040404040404",
+  "hkdf_info": "mcv-vault-v1",
+  "final_key_hex": "5a282692350a97729b5019c8e3666490051b23fe594835276407993232f7a25c"
+}

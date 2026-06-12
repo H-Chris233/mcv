@@ -28,7 +28,7 @@ secrecy = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
 sha2 = "0.10"
-sharks = "0.5"
+blahaj = "0.6"
 thiserror = "2"
 uniffi = "0.29.4"
 zeroize = "1"

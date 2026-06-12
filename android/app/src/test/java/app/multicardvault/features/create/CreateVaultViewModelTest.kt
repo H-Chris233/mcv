@@ -13,7 +13,11 @@ import app.multicardvault.features.vault.ListVaultsUseCase
 import app.multicardvault.features.vault.UpdateVaultUseCase
 import app.multicardvault.nfc.NfcCardResult
 import app.multicardvault.security.DeviceSecretRepository
+import app.multicardvault.settings.AppSettings
+import app.multicardvault.settings.AppSettingsRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -27,153 +31,191 @@ class CreateVaultViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun writeCardProgressAdvancesOnNfcSuccess() = runTest(mainDispatcherRule.dispatcher) {
-        val viewModel = testViewModel()
-        viewModel.updatePassword("passphrase")
-        viewModel.createVault()
-        advanceUntilIdle()
+    fun writeCardProgressAdvancesOnNfcSuccess() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel = testViewModel()
+            viewModel.updatePassword("passphrase")
+            viewModel.createVault()
+            advanceUntilIdle()
 
-        val command = viewModel.nextNfcCommand()
-        assertTrue(command is NfcCommand.Write)
-        viewModel.onNfcResult(NfcCardResult.Success((command as NfcCommand.Write).payload))
+            val command = viewModel.nextNfcCommand()
+            assertTrue(command is NfcCommand.Write)
+            viewModel.onNfcResult(NfcCardResult.Success((command as NfcCommand.Write).payload))
 
-        val state = viewModel.uiState.value as CreateVaultUiState.WritingCards
-        assertEquals(1, state.writtenCount)
-        assertEquals(2, state.nextCardNumber)
-    }
-
-    @Test
-    fun duplicateExactPayloadDoesNotCountTwiceDuringUnlock() = runTest(mainDispatcherRule.dispatcher) {
-        val viewModel = testViewModel()
-        viewModel.updatePassword("passphrase")
-        viewModel.createVault()
-        advanceUntilIdle()
-        writeAllCards(viewModel)
-
-        val payload = byteArrayOf(10)
-        viewModel.onNfcResult(NfcCardResult.Success(payload))
-        viewModel.onNfcResult(NfcCardResult.Success(payload))
-
-        val state = viewModel.uiState.value as CreateVaultUiState.ReadingCards
-        assertEquals(1, state.readCount)
-        assertEquals("这张卡已经读取过，请换另一张卡。", state.message)
-    }
+            val state = viewModel.uiState.value as CreateVaultUiState.WritingCards
+            assertEquals(1, state.writtenCount)
+            assertEquals(2, state.nextCardNumber)
+        }
 
     @Test
-    fun unlockTriggersWhenThresholdIsReached() = runTest(mainDispatcherRule.dispatcher) {
-        val viewModel = testViewModel()
-        viewModel.updatePassword("passphrase")
-        viewModel.createVault()
-        advanceUntilIdle()
-        writeAllCards(viewModel)
+    fun duplicateExactPayloadDoesNotCountTwiceDuringUnlock() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel = testViewModel()
+            viewModel.updatePassword("passphrase")
+            viewModel.createVault()
+            advanceUntilIdle()
+            writeAllCards(viewModel)
 
-        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(10)))
-        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(11)))
-        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(12)))
-        advanceUntilIdle()
+            val payload = byteArrayOf(10)
+            viewModel.onNfcResult(NfcCardResult.Success(payload))
+            viewModel.onNfcResult(NfcCardResult.Success(payload))
 
-        val state = viewModel.uiState.value as CreateVaultUiState.Unlocked
-        assertEquals("01010101010101010101010101010101", state.unlocked.vaultIdHex)
-        assertEquals(2, state.unlocked.plaintextSize)
-        assertTrue(state.unlocked.entries.isEmpty())
-    }
-
-    @Test
-    fun addingEntryPersistsUpdatedVaultBlob() = runTest(mainDispatcherRule.dispatcher) {
-        val harness = testHarness()
-        val viewModel = harness.viewModel
-        viewModel.updatePassword("passphrase")
-        viewModel.createVault()
-        advanceUntilIdle()
-        writeAllCards(viewModel)
-
-        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(10)))
-        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(11)))
-        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(12)))
-        advanceUntilIdle()
-
-        viewModel.updateEntryTitle("First")
-        viewModel.updateEntryContent("Secret content")
-        viewModel.saveEntryDraft()
-        advanceUntilIdle()
-
-        val state = viewModel.uiState.value as CreateVaultUiState.Unlocked
-        assertEquals("条目已保存。", state.message)
-        assertEquals(1, state.unlocked.entries.size)
-        assertEquals("First", state.unlocked.entries.single().title)
-        assertEquals("Secret content", state.unlocked.entries.single().content)
-        assertEquals(1, state.unlocked.plaintextSize)
-        assertTrue(state.draft.title.isEmpty())
-        assertEquals(listOf(1), harness.core.encodedEntryCounts)
-        assertEquals(listOf(byteArrayOf(99).toList()), harness.vaultRepository.savedVaultBlobs.map { it.toList() })
-    }
+            val state = viewModel.uiState.value as CreateVaultUiState.ReadingCards
+            assertEquals(1, state.readCount)
+            assertEquals("这张卡已经读取过，请换另一张卡。", state.message)
+        }
 
     @Test
-    fun existingVaultCanUnlockFromSavedVaultListAfterViewModelRestart() = runTest(mainDispatcherRule.dispatcher) {
-        val vaultRepository = ViewModelFakeVaultRepository()
-        val deviceSecretRepository = ViewModelFakeDeviceSecretRepository()
-        val firstViewModel = testHarness(
-            vaultRepository = vaultRepository,
-            deviceSecretRepository = deviceSecretRepository,
-        ).viewModel
-        firstViewModel.updatePassword("passphrase")
-        firstViewModel.createVault()
-        advanceUntilIdle()
+    fun unlockTriggersWhenThresholdIsReached() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel = testViewModel()
+            viewModel.updatePassword("passphrase")
+            viewModel.createVault()
+            advanceUntilIdle()
+            writeAllCards(viewModel)
 
-        val restartedViewModel = testHarness(
-            vaultRepository = vaultRepository,
-            deviceSecretRepository = deviceSecretRepository,
-        ).viewModel
-        advanceUntilIdle()
+            viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(10)))
+            viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(11)))
+            viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(12)))
+            advanceUntilIdle()
 
-        val savedVault = restartedViewModel.savedVaults.value.single()
-        assertEquals("01010101010101010101010101010101", savedVault.vaultIdHex)
-        restartedViewModel.updatePassword("passphrase")
-        restartedViewModel.startUnlockSavedVault(savedVault)
+            val state = viewModel.uiState.value as CreateVaultUiState.Unlocked
+            assertEquals("01010101010101010101010101010101", state.unlocked.vaultIdHex)
+            assertEquals(2, state.unlocked.plaintextSize)
+            assertTrue(state.unlocked.entries.isEmpty())
+        }
 
-        val command = restartedViewModel.nextNfcCommand()
-        assertTrue(command is NfcCommand.Read)
-        restartedViewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(10)))
-        restartedViewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(11)))
-        restartedViewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(12)))
-        advanceUntilIdle()
+    @Test
+    fun addingEntryPersistsUpdatedVaultBlob() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val harness = testHarness()
+            val viewModel = harness.viewModel
+            viewModel.updatePassword("passphrase")
+            viewModel.createVault()
+            advanceUntilIdle()
+            writeAllCards(viewModel)
 
-        val state = restartedViewModel.uiState.value as CreateVaultUiState.Unlocked
-        assertEquals(savedVault.vaultIdHex, state.unlocked.vaultIdHex)
-    }
+            viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(10)))
+            viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(11)))
+            viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(12)))
+            advanceUntilIdle()
 
-    private fun testViewModel(): CreateVaultViewModel {
-        return testHarness().viewModel
-    }
+            viewModel.updateEntryTitle("First")
+            viewModel.updateEntryContent("Secret content")
+            viewModel.saveEntryDraft()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value as CreateVaultUiState.Unlocked
+            assertEquals("条目已保存。", state.message)
+            assertEquals(1, state.unlocked.entries.size)
+            assertEquals(
+                "First",
+                state.unlocked.entries
+                    .single()
+                    .title,
+            )
+            assertEquals(
+                "Secret content",
+                state.unlocked.entries
+                    .single()
+                    .content,
+            )
+            assertEquals(1, state.unlocked.plaintextSize)
+            assertTrue(state.draft.title.isEmpty())
+            assertEquals(listOf(1), harness.core.encodedEntryCounts)
+            assertEquals(listOf(byteArrayOf(99).toList()), harness.vaultRepository.savedVaultBlobs.map { it.toList() })
+        }
+
+    @Test
+    fun existingVaultCanUnlockFromSavedVaultListAfterViewModelRestart() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val vaultRepository = ViewModelFakeVaultRepository()
+            val deviceSecretRepository = ViewModelFakeDeviceSecretRepository()
+            val firstViewModel =
+                testHarness(
+                    vaultRepository = vaultRepository,
+                    deviceSecretRepository = deviceSecretRepository,
+                ).viewModel
+            firstViewModel.updatePassword("passphrase")
+            firstViewModel.createVault()
+            advanceUntilIdle()
+
+            val restartedViewModel =
+                testHarness(
+                    vaultRepository = vaultRepository,
+                    deviceSecretRepository = deviceSecretRepository,
+                ).viewModel
+            advanceUntilIdle()
+
+            val savedVault = restartedViewModel.savedVaults.value.single()
+            assertEquals("01010101010101010101010101010101", savedVault.vaultIdHex)
+            restartedViewModel.updatePassword("passphrase")
+            restartedViewModel.startUnlockSavedVault(savedVault)
+
+            val command = restartedViewModel.nextNfcCommand()
+            assertTrue(command is NfcCommand.Read)
+            restartedViewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(10)))
+            restartedViewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(11)))
+            restartedViewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(12)))
+            advanceUntilIdle()
+
+            val state = restartedViewModel.uiState.value as CreateVaultUiState.Unlocked
+            assertEquals(savedVault.vaultIdHex, state.unlocked.vaultIdHex)
+        }
+
+    @Test
+    fun settingsUpdatesAreExposedInUiState() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val harness = testHarness()
+            advanceUntilIdle()
+
+            harness.viewModel.setOnboardingCompleted(true)
+            harness.viewModel.setNfcExperimentalEnabled(true)
+            harness.viewModel.setDiagnosticsEnabled(true)
+            advanceUntilIdle()
+
+            val settings = harness.viewModel.settings.value
+            assertTrue(settings.onboardingCompleted)
+            assertTrue(settings.nfcExperimentalEnabled)
+            assertTrue(settings.diagnosticsEnabled)
+        }
+
+    private fun testViewModel(): CreateVaultViewModel = testHarness().viewModel
 
     private fun testHarness(
         vaultRepository: ViewModelFakeVaultRepository = ViewModelFakeVaultRepository(),
         deviceSecretRepository: ViewModelFakeDeviceSecretRepository = ViewModelFakeDeviceSecretRepository(),
     ): ViewModelHarness {
         val core = ViewModelFakeMcvCore()
-        val viewModel = CreateVaultViewModel(
-            createVaultUseCase = CreateVaultUseCase(
-                core = core,
-                vaultRepository = vaultRepository,
-                deviceSecretRepository = deviceSecretRepository,
-            ),
-            listVaultsUseCase = ListVaultsUseCase(
-                vaultRepository = vaultRepository,
-            ),
-            unlockVaultUseCase = UnlockVaultUseCase(
-                core = core,
-                vaultRepository = vaultRepository,
-                deviceSecretRepository = deviceSecretRepository,
-            ),
-            updateVaultUseCase = UpdateVaultUseCase(
-                core = core,
-                vaultRepository = vaultRepository,
-                deviceSecretRepository = deviceSecretRepository,
-            ),
-            workDispatcher = mainDispatcherRule.dispatcher,
-            entryIdGenerator = { "03030303030303030303030303030303" },
-            clock = { 1234 },
-        )
+        val viewModel =
+            CreateVaultViewModel(
+                createVaultUseCase =
+                    CreateVaultUseCase(
+                        core = core,
+                        vaultRepository = vaultRepository,
+                        deviceSecretRepository = deviceSecretRepository,
+                    ),
+                listVaultsUseCase =
+                    ListVaultsUseCase(
+                        vaultRepository = vaultRepository,
+                    ),
+                unlockVaultUseCase =
+                    UnlockVaultUseCase(
+                        core = core,
+                        vaultRepository = vaultRepository,
+                        deviceSecretRepository = deviceSecretRepository,
+                    ),
+                updateVaultUseCase =
+                    UpdateVaultUseCase(
+                        core = core,
+                        vaultRepository = vaultRepository,
+                        deviceSecretRepository = deviceSecretRepository,
+                    ),
+                appSettingsRepository = ViewModelFakeAppSettingsRepository(),
+                workDispatcher = mainDispatcherRule.dispatcher,
+                entryIdGenerator = { "03030303030303030303030303030303" },
+                clock = { 1234 },
+            )
         return ViewModelHarness(
             viewModel = viewModel,
             core = core,
@@ -187,6 +229,32 @@ class CreateVaultViewModelTest {
             viewModel.onNfcResult(NfcCardResult.Success(command.payload))
         }
         assertTrue(viewModel.uiState.value is CreateVaultUiState.ReadingCards)
+    }
+}
+
+private class ViewModelFakeAppSettingsRepository : AppSettingsRepository {
+    private val mutableSettings = MutableStateFlow(AppSettings())
+
+    override val settings = mutableSettings.asStateFlow()
+
+    override suspend fun setOnboardingCompleted(value: Boolean) {
+        mutableSettings.value = mutableSettings.value.copy(onboardingCompleted = value)
+    }
+
+    override suspend fun setDefaultThreshold(value: Int) {
+        mutableSettings.value = mutableSettings.value.copy(defaultThreshold = value)
+    }
+
+    override suspend fun setDefaultTotal(value: Int) {
+        mutableSettings.value = mutableSettings.value.copy(defaultTotal = value)
+    }
+
+    override suspend fun setNfcExperimentalEnabled(value: Boolean) {
+        mutableSettings.value = mutableSettings.value.copy(nfcExperimentalEnabled = value)
+    }
+
+    override suspend fun setDiagnosticsEnabled(value: Boolean) {
+        mutableSettings.value = mutableSettings.value.copy(diagnosticsEnabled = value)
     }
 }
 
@@ -218,12 +286,13 @@ private class ViewModelFakeMcvCore : McvCore {
         total: Int,
         deviceSecret: ByteArray,
         initialPlaintext: ByteArray,
-    ): RustCreateVaultResult = RustCreateVaultResult(
-        vaultId = ByteArray(16) { 1 },
-        schemeId = ByteArray(16) { 2 },
-        vaultBlob = byteArrayOf(3),
-        cardPayloads = List(total) { index -> byteArrayOf((10 + index).toByte()) },
-    )
+    ): RustCreateVaultResult =
+        RustCreateVaultResult(
+            vaultId = ByteArray(16) { 1 },
+            schemeId = ByteArray(16) { 2 },
+            vaultBlob = byteArrayOf(3),
+            cardPayloads = List(total) { index -> byteArrayOf((10 + index).toByte()) },
+        )
 
     override fun unlockVault(
         password: String,
@@ -259,7 +328,11 @@ private class ViewModelFakeVaultRepository : VaultRepository {
 
     override suspend fun listVaults(): List<VaultRecord> = records.values.toList()
 
-    override suspend fun updateVaultBlob(id: String, vaultBlob: ByteArray, updatedAt: Long) {
+    override suspend fun updateVaultBlob(
+        id: String,
+        vaultBlob: ByteArray,
+        updatedAt: Long,
+    ) {
         val record = records[id] ?: error("vault not found")
         savedVaultBlobs += vaultBlob.copyOf()
         records[id] = record.copy(vaultBlob = vaultBlob.copyOf(), updatedAt = updatedAt)
@@ -276,18 +349,21 @@ private class ViewModelFakeDeviceSecretRepository : DeviceSecretRepository {
 
     override fun generateDeviceSecret(): ByteArray = generatedSecret.copyOf()
 
-    override suspend fun saveDeviceSecret(vaultId: ByteArray, deviceSecret: ByteArray) {
+    override suspend fun saveDeviceSecret(
+        vaultId: ByteArray,
+        deviceSecret: ByteArray,
+    ) {
         savedSecrets[vaultId.toStableTestHex()] = deviceSecret.copyOf()
     }
 
-    override suspend fun getDeviceSecret(vaultId: ByteArray): ByteArray? =
-        savedSecrets[vaultId.toStableTestHex()]?.copyOf()
+    override suspend fun getDeviceSecret(vaultId: ByteArray): ByteArray? = savedSecrets[vaultId.toStableTestHex()]?.copyOf()
 
     override suspend fun deleteDeviceSecret(vaultId: ByteArray) {
         savedSecrets.remove(vaultId.toStableTestHex())
     }
 }
 
-private fun ByteArray.toStableTestHex(): String = joinToString(separator = "") { byte ->
-    "%02x".format(byte)
-}
+private fun ByteArray.toStableTestHex(): String =
+    joinToString(separator = "") { byte ->
+        "%02x".format(byte)
+    }
