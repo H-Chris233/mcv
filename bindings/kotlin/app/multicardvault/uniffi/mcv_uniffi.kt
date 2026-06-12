@@ -723,24 +723,32 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
-// N.B. the name of the extension is very misleading, since it is 
-// rather `InterfaceTooLargeException`, caused by too many methods 
+// N.B. the name of the extension is very misleading, since it is
+// rather `InterfaceTooLargeException`, caused by too many methods
 // in the interface for large crates.
 //
 // By splitting the otherwise huge interface into two parts
-// * UniffiLib 
+// * UniffiLib
 // * IntegrityCheckingUniffiLib (this)
 // we allow for ~2x as many methods in the UniffiLib interface.
-// 
-// The `ffi_uniffi_contract_version` method and all checksum methods are put 
+//
+// The `ffi_uniffi_contract_version` method and all checksum methods are put
 // into `IntegrityCheckingUniffiLib` and these methods are called only once,
 // when the library is loaded.
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_mcv_uniffi_checksum_func_create_vault(
 ): Short
+fun uniffi_mcv_uniffi_checksum_func_decode_vault_plaintext(
+): Short
 fun uniffi_mcv_uniffi_checksum_func_empty_vault_plaintext(
+): Short
+fun uniffi_mcv_uniffi_checksum_func_encode_vault_plaintext(
 ): Short
 fun uniffi_mcv_uniffi_checksum_func_mcv_project_name(
 ): Short
@@ -762,8 +770,8 @@ internal interface UniffiLib : Library {
         internal val INSTANCE: UniffiLib by lazy {
             val componentName = "mcv_uniffi"
             // For large crates we prevent `MethodTooLargeException` (see #2340)
-            // N.B. the name of the extension is very misleading, since it is 
-            // rather `InterfaceTooLargeException`, caused by too many methods 
+            // N.B. the name of the extension is very misleading, since it is
+            // rather `InterfaceTooLargeException`, caused by too many methods
             // in the interface for large crates.
             //
             // By splitting the otherwise huge interface into two parts
@@ -771,7 +779,7 @@ internal interface UniffiLib : Library {
             // * IntegrityCheckingUniffiLib
             // And all checksum methods are put into `IntegrityCheckingUniffiLib`
             // we allow for ~2x as many methods in the UniffiLib interface.
-            // 
+            //
             // Thus we first load the library with `loadIndirect` as `IntegrityCheckingUniffiLib`
             // so that we can (optionally!) call `uniffiCheckApiChecksums`...
             loadIndirect<IntegrityCheckingUniffiLib>(componentName)
@@ -786,34 +794,38 @@ internal interface UniffiLib : Library {
             // to trigger this issue, the performance impact is negligible, running on
             // a macOS M1 machine the `loadIndirect` call takes ~50ms.
             val lib = loadIndirect<UniffiLib>(componentName)
-            // No need to check the contract version and checksums, since 
+            // No need to check the contract version and checksums, since
             // we already did that with `IntegrityCheckingUniffiLib` above.
             // Loading of library with integrity check done.
             lib
         }
-        
+
     }
 
     // FFI functions
-    fun uniffi_mcv_uniffi_fn_func_create_vault(`request`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_mcv_uniffi_fn_func_create_vault(`request`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun uniffi_mcv_uniffi_fn_func_decode_vault_plaintext(`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun uniffi_mcv_uniffi_fn_func_empty_vault_plaintext(uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
-fun uniffi_mcv_uniffi_fn_func_mcv_project_name(uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_mcv_uniffi_fn_func_encode_vault_plaintext(`plaintext`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
-fun uniffi_mcv_uniffi_fn_func_mcv_project_status(uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_mcv_uniffi_fn_func_mcv_project_name(uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
-fun uniffi_mcv_uniffi_fn_func_unlock_vault(`request`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_mcv_uniffi_fn_func_mcv_project_status(uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
-fun uniffi_mcv_uniffi_fn_func_update_vault(`request`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_mcv_uniffi_fn_func_unlock_vault(`request`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
-fun ffi_mcv_uniffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_mcv_uniffi_fn_func_update_vault(`request`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
-fun ffi_mcv_uniffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
-fun ffi_mcv_uniffi_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
+fun ffi_mcv_uniffi_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): Unit
-fun ffi_mcv_uniffi_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun ffi_mcv_uniffi_rust_future_poll_u8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -821,7 +833,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_u8(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_u8(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Byte
 fun ffi_mcv_uniffi_rust_future_poll_i8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -829,7 +841,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_i8(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_i8(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Byte
 fun ffi_mcv_uniffi_rust_future_poll_u16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -837,7 +849,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_u16(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_u16(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Short
 fun ffi_mcv_uniffi_rust_future_poll_i16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -845,7 +857,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_i16(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_i16(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Short
 fun ffi_mcv_uniffi_rust_future_poll_u32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -853,7 +865,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_u32(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_u32(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Int
 fun ffi_mcv_uniffi_rust_future_poll_i32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -861,7 +873,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_i32(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_i32(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Int
 fun ffi_mcv_uniffi_rust_future_poll_u64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -869,7 +881,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_u64(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_u64(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Long
 fun ffi_mcv_uniffi_rust_future_poll_i64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -877,7 +889,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_i64(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_i64(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Long
 fun ffi_mcv_uniffi_rust_future_poll_f32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -885,7 +897,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_f32(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_f32(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Float
 fun ffi_mcv_uniffi_rust_future_poll_f64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -893,7 +905,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_f64(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_f64(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Double
 fun ffi_mcv_uniffi_rust_future_poll_pointer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -901,7 +913,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_pointer(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_pointer(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_pointer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_pointer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Pointer
 fun ffi_mcv_uniffi_rust_future_poll_rust_buffer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -909,7 +921,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_rust_buffer(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_rust_buffer(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun ffi_mcv_uniffi_rust_future_poll_void(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -917,7 +929,7 @@ fun ffi_mcv_uniffi_rust_future_cancel_void(`handle`: Long,
 ): Unit
 fun ffi_mcv_uniffi_rust_future_free_void(`handle`: Long,
 ): Unit
-fun ffi_mcv_uniffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun ffi_mcv_uniffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): Unit
 
 }
@@ -936,7 +948,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_mcv_uniffi_checksum_func_create_vault() != 34948.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_mcv_uniffi_checksum_func_decode_vault_plaintext() != 34165.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_mcv_uniffi_checksum_func_empty_vault_plaintext() != 17050.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_mcv_uniffi_checksum_func_encode_vault_plaintext() != 37694.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_mcv_uniffi_checksum_func_mcv_project_name() != 3038.toShort()) {
@@ -1023,7 +1041,7 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
         }
     }
 
-/** 
+/**
  * Used to instantiate an interface without an actual pointer, for fakes in tests, mostly.
  *
  * @suppress
@@ -1050,6 +1068,29 @@ public object FfiConverterUByte: FfiConverter<UByte, Byte> {
 
     override fun write(value: UByte, buf: ByteBuffer) {
         buf.put(value.toByte())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterLong: FfiConverter<Long, Long> {
+    override fun lift(value: Long): Long {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Long {
+        return buf.getLong()
+    }
+
+    override fun lower(value: Long): Long {
+        return value
+    }
+
+    override fun allocationSize(value: Long) = 8UL
+
+    override fun write(value: Long, buf: ByteBuffer) {
+        buf.putLong(value)
     }
 }
 
@@ -1138,25 +1179,25 @@ data class CreateVaultRequest (
     /**
      * User password.
      */
-    var `password`: kotlin.String, 
+    var `password`: kotlin.String,
     /**
      * Shares required to recover.
      */
-    var `threshold`: kotlin.UByte, 
+    var `threshold`: kotlin.UByte,
     /**
      * Total cards to generate.
      */
-    var `total`: kotlin.UByte, 
+    var `total`: kotlin.UByte,
     /**
      * Android device secret bytes.
      */
-    var `deviceSecret`: kotlin.ByteArray, 
+    var `deviceSecret`: kotlin.ByteArray,
     /**
      * Encoded `VaultPlaintextV1`.
      */
     var `initialPlaintext`: kotlin.ByteArray
 ) {
-    
+
     companion object
 }
 
@@ -1200,21 +1241,21 @@ data class CreateVaultResponse (
     /**
      * Vault ID bytes.
      */
-    var `vaultId`: kotlin.ByteArray, 
+    var `vaultId`: kotlin.ByteArray,
     /**
      * Scheme ID bytes.
      */
-    var `schemeId`: kotlin.ByteArray, 
+    var `schemeId`: kotlin.ByteArray,
     /**
      * Encoded `VaultBlobV1`.
      */
-    var `vaultBlob`: kotlin.ByteArray, 
+    var `vaultBlob`: kotlin.ByteArray,
     /**
      * Encoded `CardPayloadV1` values.
      */
     var `cardPayloads`: List<kotlin.ByteArray>
 ) {
-    
+
     companion object
 }
 
@@ -1255,21 +1296,21 @@ data class UnlockVaultRequest (
     /**
      * User password.
      */
-    var `password`: kotlin.String, 
+    var `password`: kotlin.String,
     /**
      * Android device secret bytes.
      */
-    var `deviceSecret`: kotlin.ByteArray, 
+    var `deviceSecret`: kotlin.ByteArray,
     /**
      * Encoded `VaultBlobV1`.
      */
-    var `vaultBlob`: kotlin.ByteArray, 
+    var `vaultBlob`: kotlin.ByteArray,
     /**
      * Encoded `CardPayloadV1` values.
      */
     var `cardPayloads`: List<kotlin.ByteArray>
 ) {
-    
+
     companion object
 }
 
@@ -1312,7 +1353,7 @@ data class UnlockVaultResponse (
      */
     var `plaintext`: kotlin.ByteArray
 ) {
-    
+
     companion object
 }
 
@@ -1344,25 +1385,25 @@ data class UpdateVaultRequest (
     /**
      * User password.
      */
-    var `password`: kotlin.String, 
+    var `password`: kotlin.String,
     /**
      * Android device secret bytes.
      */
-    var `deviceSecret`: kotlin.ByteArray, 
+    var `deviceSecret`: kotlin.ByteArray,
     /**
      * Encoded `VaultBlobV1`.
      */
-    var `vaultBlob`: kotlin.ByteArray, 
+    var `vaultBlob`: kotlin.ByteArray,
     /**
      * Encoded `CardPayloadV1` values.
      */
-    var `cardPayloads`: List<kotlin.ByteArray>, 
+    var `cardPayloads`: List<kotlin.ByteArray>,
     /**
      * Encoded replacement `VaultPlaintextV1`.
      */
     var `newPlaintext`: kotlin.ByteArray
 ) {
-    
+
     companion object
 }
 
@@ -1408,7 +1449,7 @@ data class UpdateVaultResponse (
      */
     var `newVaultBlob`: kotlin.ByteArray
 ) {
-    
+
     companion object
 }
 
@@ -1433,13 +1474,109 @@ public object FfiConverterTypeUpdateVaultResponse: FfiConverterRustBuffer<Update
 
 
 
+/**
+ * UniFFI-safe plaintext vault contents.
+ */
+data class VaultPlaintext (
+    /**
+     * Entries stored in this vault.
+     */
+    var `entries`: List<VaultPlaintextEntry>
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeVaultPlaintext: FfiConverterRustBuffer<VaultPlaintext> {
+    override fun read(buf: ByteBuffer): VaultPlaintext {
+        return VaultPlaintext(
+            FfiConverterSequenceTypeVaultPlaintextEntry.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: VaultPlaintext) = (
+            FfiConverterSequenceTypeVaultPlaintextEntry.allocationSize(value.`entries`)
+    )
+
+    override fun write(value: VaultPlaintext, buf: ByteBuffer) {
+            FfiConverterSequenceTypeVaultPlaintextEntry.write(value.`entries`, buf)
+    }
+}
+
+
+
+/**
+ * UniFFI-safe plaintext vault entry.
+ */
+data class VaultPlaintextEntry (
+    /**
+     * Stable entry ID bytes.
+     */
+    var `id`: kotlin.ByteArray,
+    /**
+     * User-visible entry title.
+     */
+    var `title`: kotlin.String,
+    /**
+     * User-visible entry content.
+     */
+    var `content`: kotlin.String,
+    /**
+     * Creation timestamp.
+     */
+    var `createdAt`: kotlin.Long,
+    /**
+     * Last update timestamp.
+     */
+    var `updatedAt`: kotlin.Long
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeVaultPlaintextEntry: FfiConverterRustBuffer<VaultPlaintextEntry> {
+    override fun read(buf: ByteBuffer): VaultPlaintextEntry {
+        return VaultPlaintextEntry(
+            FfiConverterByteArray.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterLong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: VaultPlaintextEntry) = (
+            FfiConverterByteArray.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterString.allocationSize(value.`content`) +
+            FfiConverterLong.allocationSize(value.`createdAt`) +
+            FfiConverterLong.allocationSize(value.`updatedAt`)
+    )
+
+    override fun write(value: VaultPlaintextEntry, buf: ByteBuffer) {
+            FfiConverterByteArray.write(value.`id`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterString.write(value.`content`, buf)
+            FfiConverterLong.write(value.`createdAt`, buf)
+            FfiConverterLong.write(value.`updatedAt`, buf)
+    }
+}
+
+
+
 
 
 /**
  * UniFFI-safe error surface.
  */
 sealed class McvFfiException: kotlin.Exception() {
-    
+
     /**
      * Unsupported format or algorithm version.
      */
@@ -1448,7 +1585,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Invalid magic bytes.
      */
@@ -1457,7 +1594,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Card belongs to a different vault.
      */
@@ -1466,7 +1603,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Card belongs to a different threshold scheme.
      */
@@ -1475,7 +1612,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Same share index was presented more than once.
      */
@@ -1484,7 +1621,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Too few valid shares were provided.
      */
@@ -1493,7 +1630,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Threshold or total is invalid.
      */
@@ -1502,7 +1639,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Device secret is invalid.
      */
@@ -1511,7 +1648,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Card payload is malformed.
      */
@@ -1520,7 +1657,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Vault blob is malformed.
      */
@@ -1529,7 +1666,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Vault plaintext is malformed.
      */
@@ -1538,7 +1675,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Card AEAD authentication failed.
      */
@@ -1547,7 +1684,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Vault AEAD authentication failed.
      */
@@ -1556,7 +1693,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Cryptographic primitive failed.
      */
@@ -1565,7 +1702,7 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Shamir sharing failed.
      */
@@ -1574,13 +1711,13 @@ sealed class McvFfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<McvFfiException> {
         override fun lift(error_buf: RustBuffer.ByValue): McvFfiException = FfiConverterTypeMcvFfiError.lift(error_buf)
     }
 
-    
+
 }
 
 /**
@@ -1588,7 +1725,7 @@ sealed class McvFfiException: kotlin.Exception() {
  */
 public object FfiConverterTypeMcvFfiError : FfiConverterRustBuffer<McvFfiException> {
     override fun read(buf: ByteBuffer): McvFfiException {
-        
+
 
         return when(buf.getInt()) {
             1 -> McvFfiException.UnsupportedVersion()
@@ -1769,6 +1906,34 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
         }
     }
 }
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeVaultPlaintextEntry: FfiConverterRustBuffer<List<VaultPlaintextEntry>> {
+    override fun read(buf: ByteBuffer): List<VaultPlaintextEntry> {
+        val len = buf.getInt()
+        return List<VaultPlaintextEntry>(len) {
+            FfiConverterTypeVaultPlaintextEntry.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<VaultPlaintextEntry>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeVaultPlaintextEntry.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<VaultPlaintextEntry>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeVaultPlaintextEntry.write(it, buf)
+        }
+    }
+}
         /**
          * Creates a vault through the binding boundary.
          */
@@ -1777,6 +1942,19 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
     uniffiRustCallWithError(McvFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_mcv_uniffi_fn_func_create_vault(
         FfiConverterTypeCreateVaultRequest.lower(`request`),_status)
+}
+    )
+    }
+
+
+        /**
+         * Decodes encoded `VaultPlaintextV1` bytes into UniFFI records.
+         */
+    @Throws(McvFfiException::class) fun `decodeVaultPlaintext`(`bytes`: kotlin.ByteArray): VaultPlaintext {
+            return FfiConverterTypeVaultPlaintext.lift(
+    uniffiRustCallWithError(McvFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_mcv_uniffi_fn_func_decode_vault_plaintext(
+        FfiConverterByteArray.lower(`bytes`),_status)
 }
     )
     }
@@ -1793,7 +1971,20 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
 }
     )
     }
-    
+
+
+        /**
+         * Encodes UniFFI records as `VaultPlaintextV1` bytes.
+         */
+    @Throws(McvFfiException::class) fun `encodeVaultPlaintext`(`plaintext`: VaultPlaintext): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCallWithError(McvFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_mcv_uniffi_fn_func_encode_vault_plaintext(
+        FfiConverterTypeVaultPlaintext.lower(`plaintext`),_status)
+}
+    )
+    }
+
 
         /**
          * Returns the project name through the binding boundary.
@@ -1805,7 +1996,7 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
 }
     )
     }
-    
+
 
         /**
          * Returns the project status through the binding boundary.
@@ -1817,7 +2008,7 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
 }
     )
     }
-    
+
 
         /**
          * Unlocks a vault through the binding boundary.
@@ -1830,7 +2021,7 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
 }
     )
     }
-    
+
 
         /**
          * Updates a vault through the binding boundary.
@@ -1843,5 +2034,3 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
 }
     )
     }
-    
-

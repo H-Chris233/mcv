@@ -532,6 +532,7 @@ name = "mcv-uniffi"
 version = "0.1.0"
 dependencies = [
  "mcv-core",
+ "mcv-format",
  "thiserror",
  "uniffi",
 ]

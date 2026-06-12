@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 mcv-core = { path = "../mcv-core" }
+mcv-format = { path = "../mcv-format" }
 thiserror.workspace = true
 uniffi = { workspace = true }
 
