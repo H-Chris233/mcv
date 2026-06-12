@@ -3,7 +3,6 @@ package app.multicardvault
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -59,7 +59,7 @@ object McvAppIdentity {
     const val Purpose = "Local-first multi-card threshold encrypted vault"
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private val database: McvDatabase by lazy {
         McvDatabase.open(applicationContext)
     }
@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
         val dao = database.vaultDao()
         val core = RustMcvCore()
         val vaultRepository = RoomVaultRepository(dao)
-        val deviceSecretRepository = KeystoreDeviceSecretRepository(dao)
+        val deviceSecretRepository = KeystoreDeviceSecretRepository(dao, this)
         val factory =
             CreateVaultViewModel.Factory(
                 createVaultUseCase =
