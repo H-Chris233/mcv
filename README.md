@@ -16,10 +16,10 @@ This repository currently contains:
 
 - Rust multi-crate workspace.
 - Rust M1 protocol core for create/unlock/update flows.
-- Android Compose app with Rust UniFFI integration, Room persistence, Android Keystore device-secret wrapping, NFC NDEF write/read/unlock, and a minimal vault entry editor.
+- Android Compose app with Rust UniFFI integration, Room persistence, Android Keystore device-secret wrapping, NFC NDEF write/read/unlock, saved Vault unlock, and a minimal vault entry editor.
 - Initial documentation, ADRs, and CI workflows.
 
-M4 can write generated encrypted Card Payloads to NDEF tags, read threshold tags back, unlock the just-created Vault, display Vault Plaintext entries, and add/edit/delete simple text entries by re-encrypting a fresh Vault Blob through Rust `update_vault`. It does not implement multi-vault navigation or app-restart write-flow recovery yet.
+M5 can write generated encrypted Card Payloads to NDEF tags, read threshold tags back, unlock the just-created Vault, display Vault Plaintext entries, add/edit/delete simple text entries through Rust `update_vault`, and unlock previously saved Vaults after app restart from the local Vault list. It does not implement full multi-vault navigation or app-restart recovery for an interrupted write-card flow yet.
 
 ## Repository Layout
 

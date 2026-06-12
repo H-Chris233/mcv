@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import app.multicardvault.core.toStableHex
 import app.multicardvault.features.unlock.UnlockVaultUseCase
 import app.multicardvault.features.unlock.UnlockedVaultSummary
+import app.multicardvault.features.vault.ListVaultsUseCase
+import app.multicardvault.features.vault.SavedVaultSummary
 import app.multicardvault.features.vault.UpdateVaultUseCase
 import app.multicardvault.features.vault.VaultEntry
 import app.multicardvault.features.vault.VaultEntryDraft
@@ -69,6 +71,7 @@ sealed interface NfcCommand {
 
 class CreateVaultViewModel(
     private val createVaultUseCase: CreateVaultUseCase,
+    private val listVaultsUseCase: ListVaultsUseCase,
     private val unlockVaultUseCase: UnlockVaultUseCase,
     private val updateVaultUseCase: UpdateVaultUseCase,
     private val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
@@ -81,9 +84,16 @@ class CreateVaultViewModel(
     private val _uiState = MutableStateFlow<CreateVaultUiState>(CreateVaultUiState.Editing)
     val uiState: StateFlow<CreateVaultUiState> = _uiState.asStateFlow()
 
+    private val _savedVaults = MutableStateFlow<List<SavedVaultSummary>>(emptyList())
+    val savedVaults: StateFlow<List<SavedVaultSummary>> = _savedVaults.asStateFlow()
+
     private var currentSession: CreatedVaultSession? = null
     private val writtenPayloadIndexes = mutableSetOf<Int>()
     private val scannedPayloads = mutableListOf<ByteArray>()
+
+    init {
+        refreshSavedVaults()
+    }
 
     fun updateDisplayName(value: String) {
         _form.update { it.copy(displayName = value) }
@@ -115,6 +125,7 @@ class CreateVaultViewModel(
                     currentSession = session
                     writtenPayloadIndexes.clear()
                     scannedPayloads.clear()
+                    refreshSavedVaults()
                     CreateVaultUiState.WritingCards(
                         summary = session.summary,
                         writtenCount = 0,
@@ -126,6 +137,37 @@ class CreateVaultViewModel(
                 onFailure = { CreateVaultUiState.Failed(UserSafeCreateError) },
             )
         }
+    }
+
+    fun startUnlockSavedVault(vault: SavedVaultSummary) {
+        if (_form.value.password.isEmpty()) {
+            _uiState.value = CreateVaultUiState.Failed("请输入主密码后再解锁已有保险库。")
+            return
+        }
+        if (_uiState.value == CreateVaultUiState.Creating) return
+        if (_uiState.value is CreateVaultUiState.WritingCards) return
+        if (_uiState.value is CreateVaultUiState.ReadingCards) return
+        if (_uiState.value is CreateVaultUiState.Unlocking) return
+
+        val summary = CreatedVaultSummary(
+            vaultIdHex = vault.vaultIdHex,
+            displayName = vault.displayName,
+            threshold = vault.threshold,
+            total = vault.total,
+            cardPayloadCount = 0,
+        )
+        currentSession = CreatedVaultSession(
+            summary = summary,
+            cardPayloads = emptyList(),
+        )
+        writtenPayloadIndexes.clear()
+        scannedPayloads.clear()
+        _uiState.value = CreateVaultUiState.ReadingCards(
+            summary = summary,
+            readCount = 0,
+            threshold = summary.threshold,
+            message = "请刷入任意 ${summary.threshold} 张卡解锁已有保险库。",
+        )
     }
 
     fun nextNfcCommand(): NfcCommand? {
@@ -360,6 +402,7 @@ class CreateVaultViewModel(
                 }
             }.fold(
                 onSuccess = { updated ->
+                    refreshSavedVaults()
                     state.copy(
                         unlocked = state.unlocked.copy(
                             plaintextSize = updated.plaintextSize,
@@ -377,6 +420,17 @@ class CreateVaultViewModel(
                     )
                 },
             )
+        }
+    }
+
+    private fun refreshSavedVaults() {
+        viewModelScope.launch {
+            val vaults = runCatching {
+                withContext(workDispatcher) {
+                    listVaultsUseCase()
+                }
+            }.getOrDefault(emptyList())
+            _savedVaults.value = vaults
         }
     }
 
@@ -400,13 +454,19 @@ class CreateVaultViewModel(
 
     class Factory(
         private val createVaultUseCase: CreateVaultUseCase,
+        private val listVaultsUseCase: ListVaultsUseCase,
         private val unlockVaultUseCase: UnlockVaultUseCase,
         private val updateVaultUseCase: UpdateVaultUseCase,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(CreateVaultViewModel::class.java))
-            return CreateVaultViewModel(createVaultUseCase, unlockVaultUseCase, updateVaultUseCase) as T
+            return CreateVaultViewModel(
+                createVaultUseCase = createVaultUseCase,
+                listVaultsUseCase = listVaultsUseCase,
+                unlockVaultUseCase = unlockVaultUseCase,
+                updateVaultUseCase = updateVaultUseCase,
+            ) as T
         }
     }
 
