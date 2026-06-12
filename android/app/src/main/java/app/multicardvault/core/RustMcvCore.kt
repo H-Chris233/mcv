@@ -4,14 +4,14 @@ import app.multicardvault.uniffi.CreateVaultRequest
 import app.multicardvault.uniffi.McvFfiException
 import app.multicardvault.uniffi.UnlockVaultRequest
 import app.multicardvault.uniffi.UpdateVaultRequest
+import app.multicardvault.uniffi.mcvProjectName
+import app.multicardvault.uniffi.mcvProjectStatus
 import app.multicardvault.uniffi.VaultPlaintext as FfiVaultPlaintext
 import app.multicardvault.uniffi.VaultPlaintextEntry as FfiVaultPlaintextEntry
 import app.multicardvault.uniffi.createVault as ffiCreateVault
 import app.multicardvault.uniffi.decodeVaultPlaintext as ffiDecodeVaultPlaintext
 import app.multicardvault.uniffi.emptyVaultPlaintext as ffiEmptyVaultPlaintext
 import app.multicardvault.uniffi.encodeVaultPlaintext as ffiEncodeVaultPlaintext
-import app.multicardvault.uniffi.mcvProjectName
-import app.multicardvault.uniffi.mcvProjectStatus
 import app.multicardvault.uniffi.unlockVault as ffiUnlockVault
 import app.multicardvault.uniffi.updateVault as ffiUpdateVault
 
@@ -44,10 +44,15 @@ data class RustVaultEntry(
 
 interface McvCore {
     fun projectName(): String
+
     fun projectStatus(): String
+
     fun emptyVaultPlaintext(): ByteArray
+
     fun decodeVaultPlaintext(bytes: ByteArray): RustVaultPlaintext
+
     fun encodeVaultPlaintext(plaintext: RustVaultPlaintext): ByteArray
+
     fun createVault(
         password: String,
         threshold: Int,
@@ -80,29 +85,16 @@ class RustMcvCore : McvCore {
     override fun emptyVaultPlaintext(): ByteArray = ffiEmptyVaultPlaintext()
 
     override fun decodeVaultPlaintext(bytes: ByteArray): RustVaultPlaintext {
-        val plaintext = try {
-            ffiDecodeVaultPlaintext(bytes)
-        } catch (error: McvFfiException) {
-            throw McvCoreException("Rust core rejected vault plaintext decode", error)
-        }
+        val plaintext =
+            try {
+                ffiDecodeVaultPlaintext(bytes)
+            } catch (error: McvFfiException) {
+                throw McvCoreException("Rust core rejected vault plaintext decode", error)
+            }
         return RustVaultPlaintext(
-            entries = plaintext.entries.map { entry ->
-                RustVaultEntry(
-                    id = entry.id,
-                    title = entry.title,
-                    content = entry.content,
-                    createdAt = entry.createdAt,
-                    updatedAt = entry.updatedAt,
-                )
-            },
-        )
-    }
-
-    override fun encodeVaultPlaintext(plaintext: RustVaultPlaintext): ByteArray = try {
-        ffiEncodeVaultPlaintext(
-            FfiVaultPlaintext(
-                entries = plaintext.entries.map { entry ->
-                    FfiVaultPlaintextEntry(
+            entries =
+                plaintext.entries.map { entry ->
+                    RustVaultEntry(
                         id = entry.id,
                         title = entry.title,
                         content = entry.content,
@@ -110,11 +102,28 @@ class RustMcvCore : McvCore {
                         updatedAt = entry.updatedAt,
                     )
                 },
-            ),
         )
-    } catch (error: McvFfiException) {
-        throw McvCoreException("Rust core rejected vault plaintext encode", error)
     }
+
+    override fun encodeVaultPlaintext(plaintext: RustVaultPlaintext): ByteArray =
+        try {
+            ffiEncodeVaultPlaintext(
+                FfiVaultPlaintext(
+                    entries =
+                        plaintext.entries.map { entry ->
+                            FfiVaultPlaintextEntry(
+                                id = entry.id,
+                                title = entry.title,
+                                content = entry.content,
+                                createdAt = entry.createdAt,
+                                updatedAt = entry.updatedAt,
+                            )
+                        },
+                ),
+            )
+        } catch (error: McvFfiException) {
+            throw McvCoreException("Rust core rejected vault plaintext encode", error)
+        }
 
     @OptIn(ExperimentalUnsignedTypes::class)
     override fun createVault(
@@ -124,19 +133,20 @@ class RustMcvCore : McvCore {
         deviceSecret: ByteArray,
         initialPlaintext: ByteArray,
     ): RustCreateVaultResult {
-        val response = try {
-            ffiCreateVault(
-                CreateVaultRequest(
-                    password = password,
-                    threshold = threshold.toUByte(),
-                    total = total.toUByte(),
-                    deviceSecret = deviceSecret,
-                    initialPlaintext = initialPlaintext,
-                ),
-            )
-        } catch (error: McvFfiException) {
-            throw McvCoreException("Rust core rejected vault creation", error)
-        }
+        val response =
+            try {
+                ffiCreateVault(
+                    CreateVaultRequest(
+                        password = password,
+                        threshold = threshold.toUByte(),
+                        total = total.toUByte(),
+                        deviceSecret = deviceSecret,
+                        initialPlaintext = initialPlaintext,
+                    ),
+                )
+            } catch (error: McvFfiException) {
+                throw McvCoreException("Rust core rejected vault creation", error)
+            }
 
         return RustCreateVaultResult(
             vaultId = response.vaultId,
@@ -152,18 +162,19 @@ class RustMcvCore : McvCore {
         vaultBlob: ByteArray,
         cardPayloads: List<ByteArray>,
     ): RustUnlockVaultResult {
-        val response = try {
-            ffiUnlockVault(
-                UnlockVaultRequest(
-                    password = password,
-                    deviceSecret = deviceSecret,
-                    vaultBlob = vaultBlob,
-                    cardPayloads = cardPayloads,
-                ),
-            )
-        } catch (error: McvFfiException) {
-            throw McvCoreException("Rust core rejected vault unlock", error)
-        }
+        val response =
+            try {
+                ffiUnlockVault(
+                    UnlockVaultRequest(
+                        password = password,
+                        deviceSecret = deviceSecret,
+                        vaultBlob = vaultBlob,
+                        cardPayloads = cardPayloads,
+                    ),
+                )
+            } catch (error: McvFfiException) {
+                throw McvCoreException("Rust core rejected vault unlock", error)
+            }
 
         return RustUnlockVaultResult(
             plaintext = response.plaintext,
@@ -177,19 +188,20 @@ class RustMcvCore : McvCore {
         cardPayloads: List<ByteArray>,
         newPlaintext: ByteArray,
     ): RustUpdateVaultResult {
-        val response = try {
-            ffiUpdateVault(
-                UpdateVaultRequest(
-                    password = password,
-                    deviceSecret = deviceSecret,
-                    vaultBlob = vaultBlob,
-                    cardPayloads = cardPayloads,
-                    newPlaintext = newPlaintext,
-                ),
-            )
-        } catch (error: McvFfiException) {
-            throw McvCoreException("Rust core rejected vault update", error)
-        }
+        val response =
+            try {
+                ffiUpdateVault(
+                    UpdateVaultRequest(
+                        password = password,
+                        deviceSecret = deviceSecret,
+                        vaultBlob = vaultBlob,
+                        cardPayloads = cardPayloads,
+                        newPlaintext = newPlaintext,
+                    ),
+                )
+            } catch (error: McvFfiException) {
+                throw McvCoreException("Rust core rejected vault update", error)
+            }
 
         return RustUpdateVaultResult(
             newVaultBlob = response.newVaultBlob,

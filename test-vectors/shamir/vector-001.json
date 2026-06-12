@@ -1,0 +1,18 @@
+{
+  "name": "shamir-gf256-3-of-5",
+  "generator": "cargo run -p mcv-core --example mvp_vectors",
+  "rng": "ChaCha20Rng seed 0x01 repeated 32 bytes",
+  "threshold": 3,
+  "total": 5,
+  "implementation": "blahaj 0.6.0",
+  "secret_hex": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+  "shares_hex": [
+    "0112ca1e2b827ce089c5801e8e63d9dc45b20f4225ae42be66b9d7a412b87faff2",
+    "02562961392321da46ef7b0ee3c0465a65985e30fb3e8832fc1fd99ccddb4da141",
+    "036ec955388b7710e500d13a4789b5ac0a007b58f4bae0a6b08c2412f549182499",
+    "04e2733048359a2e2ea5e84fef1e94f4ca153a118e06a6aebe7881bd9fd2f76bc3",
+    "05da9304499dcce48d4a427b4b576702a58d1f798182ce3af2eb7c33a740a2ee1b"
+  ],
+  "recover_with_share_indexes": [2, 3, 4],
+  "recovered_secret_hex": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
+}

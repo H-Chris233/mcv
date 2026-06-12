@@ -3,8 +3,8 @@
 
 use std::convert::TryFrom;
 
+use blahaj::{Share as BlahajShare, Sharks as BlahajSharks};
 use rand::Rng;
-use sharks::{Share as SharksShare, Sharks};
 use thiserror::Error;
 
 /// Shamir GF(256) algorithm identifier reserved for protocol version 1.
@@ -16,7 +16,7 @@ pub enum ShamirError {
     /// Threshold or total is invalid.
     #[error("invalid threshold scheme")]
     InvalidThreshold,
-    /// Share bytes are not a valid sharks share.
+    /// Share bytes are not a valid serialized Shamir share.
     #[error("invalid share bytes")]
     InvalidShareBytes,
     /// There are not enough shares to recover a secret.
@@ -70,10 +70,10 @@ pub trait SecretSharing {
     fn recover(threshold: u8, shares: &[Share]) -> Result<Vec<u8>, ShamirError>;
 }
 
-/// GF(256) Shamir implementation backed by the `sharks` crate.
-pub struct SharksSecretSharing;
+/// GF(256) Shamir implementation backed by the `blahaj` crate.
+pub struct BlahajSecretSharing;
 
-impl SecretSharing for SharksSecretSharing {
+impl SecretSharing for BlahajSecretSharing {
     fn split(
         secret: &[u8],
         threshold: u8,
@@ -84,8 +84,8 @@ impl SecretSharing for SharksSecretSharing {
             return Err(ShamirError::InvalidThreshold);
         }
 
-        let sharks = Sharks(threshold);
-        let shares = sharks.dealer_rng(secret, rng).take(usize::from(total));
+        let sharing = BlahajSharks(threshold);
+        let shares = sharing.dealer_rng(secret, rng).take(usize::from(total));
         shares
             .map(|share| {
                 let bytes = Vec::from(&share);
@@ -110,12 +110,12 @@ impl SecretSharing for SharksSecretSharing {
             .iter()
             .take(usize::from(threshold))
             .map(|share| {
-                SharksShare::try_from(share.value())
+                BlahajShare::try_from(share.value())
                     .map_err(|_error| ShamirError::InvalidShareBytes)
             })
             .collect();
         let parsed = parsed?;
-        Sharks(threshold)
+        BlahajSharks(threshold)
             .recover(&parsed)
             .map_err(|_error| ShamirError::RecoverFailed)
     }
@@ -143,16 +143,16 @@ mod tests {
     }
 
     #[test]
-    fn sharks_split_and_recover_three_of_five() -> Result<(), ShamirError> {
+    fn blahaj_split_and_recover_three_of_five() -> Result<(), ShamirError> {
         let mut rng = ChaCha20Rng::from_seed([1_u8; 32]);
         let secret = [42_u8; 32];
-        let shares = SharksSecretSharing::split(&secret, 3, 5, &mut rng)?;
-        let recovered = SharksSecretSharing::recover(3, &shares[1..4])?;
+        let shares = BlahajSecretSharing::split(&secret, 3, 5, &mut rng)?;
+        let recovered = BlahajSecretSharing::recover(3, &shares[1..4])?;
 
         assert_eq!(shares.len(), 5);
         assert_eq!(recovered, secret);
         assert_eq!(
-            SharksSecretSharing::recover(3, &shares[0..2]),
+            BlahajSecretSharing::recover(3, &shares[0..2]),
             Err(ShamirError::NotEnoughShares)
         );
         Ok(())

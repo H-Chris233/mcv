@@ -1,6 +1,6 @@
 # Vault Blob v1
 
-Status: M1 implemented in Rust.
+Status: v0.1 MVP implemented in Rust.
 
 Vault Blob v1 is fixed-order CBOR array data. It stores:
 
@@ -37,3 +37,22 @@ Vault Plaintext v1 is fixed-order CBOR:
   ]
 ]
 ```
+
+## Validation
+
+- `magic` must be `MCVB`.
+- `version` must be `1`.
+- `vault_id` must match the selected local Vault record.
+- `scheme_id` must match scanned Card Payloads.
+- `kdf_id` must be Argon2id v1.
+- `aead_id` must be XChaCha20-Poly1305 v1.
+- `sss_id` must be Shamir GF(256) v1.
+- `threshold` and `total` must be non-zero and `threshold <= total`.
+- `vault_salt` must be 16 bytes.
+- `vault_nonce` must be 24 bytes.
+- `ciphertext` must decrypt with the Vault Blob header as AAD.
+- Vault Plaintext v1 entries must contain 16-byte IDs and UTF-8 title/content strings.
+
+## Storage
+
+Android stores the encoded Vault Blob in Room. Room must not store Vault Plaintext, user passwords, unencrypted shares, `master_secret`, `password_key`, `final_key`, or raw `device_secret`.

@@ -11,8 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-audit
+      - uses: taiki-e/install-action@cargo-deny
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - run: cargo audit
+      - run: cargo deny check advisories bans sources
       - run: cargo build -p mcv-uniffi
       - run: cargo run -p mcv-bindgen -- target/debug/libmcv_uniffi.so /tmp/mcv-bindings

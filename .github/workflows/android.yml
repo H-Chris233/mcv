@@ -24,5 +24,8 @@ jobs:
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
       - run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.1" "ndk;27.2.12479018"
+      - run: ../gradlew ktlintCheck
+      - run: ../gradlew detekt
+      - run: ../gradlew lintDebug
       - run: ../gradlew test
       - run: ../gradlew assembleDebug

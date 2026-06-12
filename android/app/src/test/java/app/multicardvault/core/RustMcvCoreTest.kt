@@ -16,13 +16,14 @@ class RustMcvCoreTest {
 
     @Test
     fun createVaultThroughUniffiReturnsVaultBlobAndCardPayloads() {
-        val result = core.createVault(
-            password = "correct horse battery staple",
-            threshold = 2,
-            total = 3,
-            deviceSecret = ByteArray(32) { 7 },
-            initialPlaintext = core.emptyVaultPlaintext(),
-        )
+        val result =
+            core.createVault(
+                password = "correct horse battery staple",
+                threshold = 2,
+                total = 3,
+                deviceSecret = ByteArray(32) { 7 },
+                initialPlaintext = core.emptyVaultPlaintext(),
+            )
 
         assertEquals(16, result.vaultId.size)
         assertEquals(16, result.schemeId.size)
@@ -35,37 +36,41 @@ class RustMcvCoreTest {
     fun unlockVaultThroughUniffiReturnsPlaintext() {
         val password = "correct horse battery staple"
         val deviceSecret = ByteArray(32) { 7 }
-        val created = core.createVault(
-            password = password,
-            threshold = 2,
-            total = 3,
-            deviceSecret = deviceSecret,
-            initialPlaintext = core.emptyVaultPlaintext(),
-        )
+        val created =
+            core.createVault(
+                password = password,
+                threshold = 2,
+                total = 3,
+                deviceSecret = deviceSecret,
+                initialPlaintext = core.emptyVaultPlaintext(),
+            )
 
-        val unlocked = core.unlockVault(
-            password = password,
-            deviceSecret = deviceSecret,
-            vaultBlob = created.vaultBlob,
-            cardPayloads = created.cardPayloads.take(2),
-        )
+        val unlocked =
+            core.unlockVault(
+                password = password,
+                deviceSecret = deviceSecret,
+                vaultBlob = created.vaultBlob,
+                cardPayloads = created.cardPayloads.take(2),
+            )
 
         assertTrue(unlocked.plaintext.isNotEmpty())
     }
 
     @Test
     fun vaultPlaintextRoundtripsThroughUniffi() {
-        val plaintext = RustVaultPlaintext(
-            entries = listOf(
-                RustVaultEntry(
-                    id = ByteArray(16) { 3 },
-                    title = "Entry",
-                    content = "Content",
-                    createdAt = 1,
-                    updatedAt = 2,
-                ),
-            ),
-        )
+        val plaintext =
+            RustVaultPlaintext(
+                entries =
+                    listOf(
+                        RustVaultEntry(
+                            id = ByteArray(16) { 3 },
+                            title = "Entry",
+                            content = "Content",
+                            createdAt = 1,
+                            updatedAt = 2,
+                        ),
+                    ),
+            )
 
         val encoded = core.encodeVaultPlaintext(plaintext)
         val decoded = core.decodeVaultPlaintext(encoded)
@@ -78,40 +83,45 @@ class RustMcvCoreTest {
     fun updateVaultThroughUniffiReturnsReplacementBlob() {
         val password = "correct horse battery staple"
         val deviceSecret = ByteArray(32) { 7 }
-        val created = core.createVault(
-            password = password,
-            threshold = 2,
-            total = 3,
-            deviceSecret = deviceSecret,
-            initialPlaintext = core.emptyVaultPlaintext(),
-        )
-        val nextPlaintext = core.encodeVaultPlaintext(
-            RustVaultPlaintext(
-                entries = listOf(
-                    RustVaultEntry(
-                        id = ByteArray(16) { 4 },
-                        title = "Updated",
-                        content = "Updated content",
-                        createdAt = 10,
-                        updatedAt = 10,
-                    ),
+        val created =
+            core.createVault(
+                password = password,
+                threshold = 2,
+                total = 3,
+                deviceSecret = deviceSecret,
+                initialPlaintext = core.emptyVaultPlaintext(),
+            )
+        val nextPlaintext =
+            core.encodeVaultPlaintext(
+                RustVaultPlaintext(
+                    entries =
+                        listOf(
+                            RustVaultEntry(
+                                id = ByteArray(16) { 4 },
+                                title = "Updated",
+                                content = "Updated content",
+                                createdAt = 10,
+                                updatedAt = 10,
+                            ),
+                        ),
                 ),
-            ),
-        )
+            )
 
-        val updated = core.updateVault(
-            password = password,
-            deviceSecret = deviceSecret,
-            vaultBlob = created.vaultBlob,
-            cardPayloads = created.cardPayloads.take(2),
-            newPlaintext = nextPlaintext,
-        )
-        val unlocked = core.unlockVault(
-            password = password,
-            deviceSecret = deviceSecret,
-            vaultBlob = updated.newVaultBlob,
-            cardPayloads = created.cardPayloads.take(2),
-        )
+        val updated =
+            core.updateVault(
+                password = password,
+                deviceSecret = deviceSecret,
+                vaultBlob = created.vaultBlob,
+                cardPayloads = created.cardPayloads.take(2),
+                newPlaintext = nextPlaintext,
+            )
+        val unlocked =
+            core.unlockVault(
+                password = password,
+                deviceSecret = deviceSecret,
+                vaultBlob = updated.newVaultBlob,
+                cardPayloads = created.cardPayloads.take(2),
+            )
 
         val decoded = core.decodeVaultPlaintext(unlocked.plaintext)
         assertEquals("Updated", decoded.entries.single().title)

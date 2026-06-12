@@ -2,9 +2,17 @@ package app.multicardvault.data
 
 interface VaultRepository {
     suspend fun createVault(record: VaultRecord)
+
     suspend fun getVault(id: String): VaultRecord?
+
     suspend fun listVaults(): List<VaultRecord>
-    suspend fun updateVaultBlob(id: String, vaultBlob: ByteArray, updatedAt: Long)
+
+    suspend fun updateVaultBlob(
+        id: String,
+        vaultBlob: ByteArray,
+        updatedAt: Long,
+    )
+
     suspend fun deleteVault(id: String)
 }
 
@@ -19,7 +27,11 @@ class RoomVaultRepository(
 
     override suspend fun listVaults(): List<VaultRecord> = dao.listVaults().map { it.toRecord() }
 
-    override suspend fun updateVaultBlob(id: String, vaultBlob: ByteArray, updatedAt: Long) {
+    override suspend fun updateVaultBlob(
+        id: String,
+        vaultBlob: ByteArray,
+        updatedAt: Long,
+    ) {
         check(dao.updateVaultBlob(id, vaultBlob, updatedAt) == 1) { "vault not found" }
     }
 
