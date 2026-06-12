@@ -39,6 +39,8 @@ import app.multicardvault.features.create.CreateVaultUiState
 import app.multicardvault.features.create.CreateVaultUseCase
 import app.multicardvault.features.create.CreateVaultViewModel
 import app.multicardvault.features.unlock.UnlockVaultUseCase
+import app.multicardvault.features.vault.ListVaultsUseCase
+import app.multicardvault.features.vault.SavedVaultSummary
 import app.multicardvault.features.vault.UpdateVaultUseCase
 import app.multicardvault.nfc.NdefNfcRepository
 import app.multicardvault.nfc.NfcRepository
@@ -79,6 +81,9 @@ class MainActivity : ComponentActivity() {
                 core = core,
                 vaultRepository = vaultRepository,
                 deviceSecretRepository = deviceSecretRepository,
+            ),
+            listVaultsUseCase = ListVaultsUseCase(
+                vaultRepository = vaultRepository,
             ),
             unlockVaultUseCase = UnlockVaultUseCase(
                 core = core,
@@ -150,6 +155,7 @@ fun MultiCardVaultApp(
 ) {
     val form by viewModel.form.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val savedVaults by viewModel.savedVaults.collectAsStateWithLifecycle()
 
     MaterialTheme {
         Surface(
@@ -171,6 +177,12 @@ fun MultiCardVaultApp(
                     onPasswordChange = viewModel::updatePassword,
                     onCreateClick = viewModel::createVault,
                 )
+                SavedVaultList(
+                    vaults = savedVaults,
+                    password = form.password,
+                    uiState = uiState,
+                    onUnlockClick = viewModel::startUnlockSavedVault,
+                )
                 CreateVaultStatus(
                     uiState = uiState,
                     onEntryTitleChange = viewModel::updateEntryTitle,
@@ -183,6 +195,55 @@ fun MultiCardVaultApp(
             }
         }
     }
+}
+
+@Composable
+private fun SavedVaultList(
+    vaults: List<SavedVaultSummary>,
+    password: String,
+    uiState: CreateVaultUiState,
+    onUnlockClick: (SavedVaultSummary) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("已有保险库", style = MaterialTheme.typography.titleLarge)
+            if (vaults.isEmpty()) {
+                Text("本机暂无已保存的 Vault。")
+            } else {
+                vaults.forEach { vault ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(vault.displayName, style = MaterialTheme.typography.titleMedium)
+                            Text("Vault ID：${vault.vaultIdHex.take(16)}...")
+                            Text("门限：${vault.threshold}-of-${vault.total}")
+                            Button(
+                                onClick = { onUnlockClick(vault) },
+                                enabled = password.isNotEmpty() && canStartSavedVaultUnlock(uiState),
+                            ) {
+                                Text("刷卡解锁")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun canStartSavedVaultUnlock(uiState: CreateVaultUiState): Boolean = when (uiState) {
+    CreateVaultUiState.Editing -> true
+    is CreateVaultUiState.Failed -> true
+    is CreateVaultUiState.Unlocked -> true
+    CreateVaultUiState.Creating,
+    is CreateVaultUiState.ReadingCards,
+    is CreateVaultUiState.Unlocking,
+    is CreateVaultUiState.WritingCards -> false
 }
 
 @Composable
