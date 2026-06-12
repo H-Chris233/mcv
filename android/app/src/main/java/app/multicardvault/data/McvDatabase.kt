@@ -17,10 +17,12 @@ abstract class McvDatabase : RoomDatabase() {
     abstract fun vaultDao(): VaultDao
 
     companion object {
-        fun open(context: Context): McvDatabase = Room.databaseBuilder(
-            context.applicationContext,
-            McvDatabase::class.java,
-            "mcv.db",
-        ).build()
+        fun open(context: Context): McvDatabase =
+            Room
+                .databaseBuilder(
+                    context.applicationContext,
+                    McvDatabase::class.java,
+                    "mcv.db",
+                ).build()
     }
 }

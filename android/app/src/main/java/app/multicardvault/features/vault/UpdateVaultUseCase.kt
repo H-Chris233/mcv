@@ -28,31 +28,35 @@ class UpdateVaultUseCase(
         val vault = vaultRepository.getVault(vaultIdHex) ?: error("vault not found")
         require(cardPayloads.size >= vault.threshold) { "not enough card payloads" }
 
-        val deviceSecret = deviceSecretRepository.getDeviceSecret(vault.vaultId)
-            ?: error("device secret not found")
+        val deviceSecret =
+            deviceSecretRepository.getDeviceSecret(vault.vaultId)
+                ?: error("device secret not found")
         var plaintext: ByteArray? = null
         try {
-            val encodedPlaintext = core.encodeVaultPlaintext(
-                RustVaultPlaintext(
-                    entries = entries.map { entry ->
-                        RustVaultEntry(
-                            id = entry.idHex.hexToByteArray(),
-                            title = entry.title,
-                            content = entry.content,
-                            createdAt = entry.createdAt,
-                            updatedAt = entry.updatedAt,
-                        )
-                    },
-                ),
-            )
+            val encodedPlaintext =
+                core.encodeVaultPlaintext(
+                    RustVaultPlaintext(
+                        entries =
+                            entries.map { entry ->
+                                RustVaultEntry(
+                                    id = entry.idHex.hexToByteArray(),
+                                    title = entry.title,
+                                    content = entry.content,
+                                    createdAt = entry.createdAt,
+                                    updatedAt = entry.updatedAt,
+                                )
+                            },
+                    ),
+                )
             plaintext = encodedPlaintext
-            val updated = core.updateVault(
-                password = password,
-                deviceSecret = deviceSecret,
-                vaultBlob = vault.vaultBlob,
-                cardPayloads = cardPayloads,
-                newPlaintext = encodedPlaintext,
-            )
+            val updated =
+                core.updateVault(
+                    password = password,
+                    deviceSecret = deviceSecret,
+                    vaultBlob = vault.vaultBlob,
+                    cardPayloads = cardPayloads,
+                    newPlaintext = encodedPlaintext,
+                )
             vaultRepository.updateVaultBlob(vaultIdHex, updated.newVaultBlob, updatedAt)
             return UpdatedVaultSummary(plaintextSize = encodedPlaintext.size)
         } finally {

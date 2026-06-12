@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!(
         "  \"kdf_params\": {{ \"memory_cost_kib\": 64, \"time_cost\": 1, \"parallelism\": 1 }},"
     );
-    println!("  \"password\": \"mcv test password\",");
+    println!("  \"unlock_phrase\": \"mcv test password\",");
     println!("  \"device_secret_hex\": \"{}\",", hex(&[0x22; SECRET_LEN]));
     println!("  \"plaintext_hex\": \"{}\",", hex(&plaintext));
     println!("  \"vault_id_hex\": \"{}\",", hex(&response.vault_id));

@@ -16,74 +16,82 @@ import org.junit.Test
 
 class UpdateVaultUseCaseTest {
     @Test
-    fun updateVaultReencryptsPlaintextAndStoresNewBlob() = runTest {
-        val core = UpdateFakeMcvCore()
-        val vaultRepository = UpdateFakeVaultRepository()
-        val deviceSecretRepository = UpdateFakeDeviceSecretRepository()
-        val useCase = UpdateVaultUseCase(
-            core = core,
-            vaultRepository = vaultRepository,
-            deviceSecretRepository = deviceSecretRepository,
-        )
+    fun updateVaultReencryptsPlaintextAndStoresNewBlob() =
+        runTest {
+            val core = UpdateFakeMcvCore()
+            val vaultRepository = UpdateFakeVaultRepository()
+            val deviceSecretRepository = UpdateFakeDeviceSecretRepository()
+            val useCase =
+                UpdateVaultUseCase(
+                    core = core,
+                    vaultRepository = vaultRepository,
+                    deviceSecretRepository = deviceSecretRepository,
+                )
 
-        val result = useCase(
-            vaultIdHex = UpdateVaultIdHex,
-            password = "passphrase",
-            cardPayloads = listOf(byteArrayOf(1), byteArrayOf(2)),
-            entries = listOf(
-                VaultEntry(
-                    idHex = "03030303030303030303030303030303",
-                    title = "Entry",
-                    content = "Content",
-                    createdAt = 10,
-                    updatedAt = 11,
-                ),
-            ),
-            updatedAt = 99,
-        )
+            val result =
+                useCase(
+                    vaultIdHex = UPDATE_VAULT_ID_HEX,
+                    password = "passphrase",
+                    cardPayloads = listOf(byteArrayOf(1), byteArrayOf(2)),
+                    entries =
+                        listOf(
+                            VaultEntry(
+                                idHex = "03030303030303030303030303030303",
+                                title = "Entry",
+                                content = "Content",
+                                createdAt = 10,
+                                updatedAt = 11,
+                            ),
+                        ),
+                    updatedAt = 99,
+                )
 
-        assertEquals(1, result.plaintextSize)
-        assertArrayEquals(byteArrayOf(8, 8), vaultRepository.record.vaultBlob)
-        assertEquals(99, vaultRepository.record.updatedAt)
-        assertEquals(1, core.encodedEntryCount)
-        assertArrayEquals(byteArrayOf(1), core.receivedNewPlaintext)
-        assertEquals(2, core.receivedCardPayloadCount)
-    }
-
-    @Test
-    fun updateVaultClearsDeviceSecretWhenPlaintextEncodeFails() = runTest {
-        val core = UpdateFakeMcvCore(failEncode = true)
-        val vaultRepository = UpdateFakeVaultRepository()
-        val deviceSecretRepository = UpdateFakeDeviceSecretRepository()
-        val useCase = UpdateVaultUseCase(
-            core = core,
-            vaultRepository = vaultRepository,
-            deviceSecretRepository = deviceSecretRepository,
-        )
-
-        val result = runCatching {
-            useCase(
-                vaultIdHex = UpdateVaultIdHex,
-                password = "passphrase",
-                cardPayloads = listOf(byteArrayOf(1), byteArrayOf(2)),
-                entries = listOf(
-                    VaultEntry(
-                        idHex = "03030303030303030303030303030303",
-                        title = "Entry",
-                        content = "Content",
-                        createdAt = 10,
-                        updatedAt = 11,
-                    ),
-                ),
-            )
+            assertEquals(1, result.plaintextSize)
+            assertArrayEquals(byteArrayOf(8, 8), vaultRepository.record.vaultBlob)
+            assertEquals(99, vaultRepository.record.updatedAt)
+            assertEquals(1, core.encodedEntryCount)
+            assertArrayEquals(byteArrayOf(1), core.receivedNewPlaintext)
+            assertEquals(2, core.receivedCardPayloadCount)
         }
 
-        assertTrue(result.isFailure)
-        assertTrue(deviceSecretRepository.secret.all { it == 0.toByte() })
-    }
+    @Test
+    fun updateVaultClearsDeviceSecretWhenPlaintextEncodeFails() =
+        runTest {
+            val core = UpdateFakeMcvCore(failEncode = true)
+            val vaultRepository = UpdateFakeVaultRepository()
+            val deviceSecretRepository = UpdateFakeDeviceSecretRepository()
+            val useCase =
+                UpdateVaultUseCase(
+                    core = core,
+                    vaultRepository = vaultRepository,
+                    deviceSecretRepository = deviceSecretRepository,
+                )
+
+            val result =
+                runCatching {
+                    useCase(
+                        vaultIdHex = UPDATE_VAULT_ID_HEX,
+                        password = "passphrase",
+                        cardPayloads = listOf(byteArrayOf(1), byteArrayOf(2)),
+                        entries =
+                            listOf(
+                                VaultEntry(
+                                    idHex = "03030303030303030303030303030303",
+                                    title = "Entry",
+                                    content = "Content",
+                                    createdAt = 10,
+                                    updatedAt = 11,
+                                ),
+                            ),
+                    )
+                }
+
+            assertTrue(result.isFailure)
+            assertTrue(deviceSecretRepository.secret.all { it == 0.toByte() })
+        }
 }
 
-private const val UpdateVaultIdHex = "01010101010101010101010101010101"
+private const val UPDATE_VAULT_ID_HEX = "01010101010101010101010101010101"
 
 private class UpdateFakeMcvCore(
     private val failEncode: Boolean = false,
@@ -135,17 +143,18 @@ private class UpdateFakeMcvCore(
 }
 
 private class UpdateFakeVaultRepository : VaultRepository {
-    var record = VaultRecord(
-        id = UpdateVaultIdHex,
-        vaultId = ByteArray(16) { 1 },
-        displayName = "Primary",
-        threshold = 2,
-        total = 3,
-        schemeId = ByteArray(16) { 2 },
-        vaultBlob = byteArrayOf(7, 7),
-        createdAt = 1,
-        updatedAt = 1,
-    )
+    var record =
+        VaultRecord(
+            id = UPDATE_VAULT_ID_HEX,
+            vaultId = ByteArray(16) { 1 },
+            displayName = "Primary",
+            threshold = 2,
+            total = 3,
+            schemeId = ByteArray(16) { 2 },
+            vaultBlob = byteArrayOf(7, 7),
+            createdAt = 1,
+            updatedAt = 1,
+        )
 
     override suspend fun createVault(record: VaultRecord) {
         this.record = record
@@ -155,7 +164,11 @@ private class UpdateFakeVaultRepository : VaultRepository {
 
     override suspend fun listVaults(): List<VaultRecord> = listOf(record)
 
-    override suspend fun updateVaultBlob(id: String, vaultBlob: ByteArray, updatedAt: Long) {
+    override suspend fun updateVaultBlob(
+        id: String,
+        vaultBlob: ByteArray,
+        updatedAt: Long,
+    ) {
         check(id == record.id)
         record = record.copy(vaultBlob = vaultBlob.copyOf(), updatedAt = updatedAt)
     }
@@ -172,7 +185,10 @@ private class UpdateFakeDeviceSecretRepository : DeviceSecretRepository {
 
     override fun generateDeviceSecret(): ByteArray = byteArrayOf(9)
 
-    override suspend fun saveDeviceSecret(vaultId: ByteArray, deviceSecret: ByteArray) = Unit
+    override suspend fun saveDeviceSecret(
+        vaultId: ByteArray,
+        deviceSecret: ByteArray,
+    ) = Unit
 
     override suspend fun getDeviceSecret(vaultId: ByteArray): ByteArray = secret
 

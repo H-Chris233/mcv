@@ -38,26 +38,28 @@ data class VaultRecord(
     val updatedAt: Long,
 )
 
-fun VaultRecord.toEntity(): VaultEntity = VaultEntity(
-    id = id,
-    vaultId = vaultId,
-    displayName = displayName,
-    threshold = threshold,
-    total = total,
-    schemeId = schemeId,
-    vaultBlob = vaultBlob,
-    createdAt = createdAt,
-    updatedAt = updatedAt,
-)
+fun VaultRecord.toEntity(): VaultEntity =
+    VaultEntity(
+        id = id,
+        vaultId = vaultId,
+        displayName = displayName,
+        threshold = threshold,
+        total = total,
+        schemeId = schemeId,
+        vaultBlob = vaultBlob,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+    )
 
-fun VaultEntity.toRecord(): VaultRecord = VaultRecord(
-    id = id,
-    vaultId = vaultId,
-    displayName = displayName,
-    threshold = threshold,
-    total = total,
-    schemeId = schemeId,
-    vaultBlob = vaultBlob,
-    createdAt = createdAt,
-    updatedAt = updatedAt,
-)
+fun VaultEntity.toRecord(): VaultRecord =
+    VaultRecord(
+        id = id,
+        vaultId = vaultId,
+        displayName = displayName,
+        threshold = threshold,
+        total = total,
+        schemeId = schemeId,
+        vaultBlob = vaultBlob,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+    )

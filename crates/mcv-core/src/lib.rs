@@ -15,7 +15,7 @@ use mcv_crypto::{
 use mcv_format::{
     CardPayloadV1, FormatError, KdfParams, VaultBlobV1, VaultPlaintextV1, FORMAT_VERSION_V1, ID_LEN,
 };
-use mcv_shamir::{SecretSharing, ShamirError, Share, SharksSecretSharing, SSS_SHAMIR_GF256_V1};
+use mcv_shamir::{BlahajSecretSharing, SecretSharing, ShamirError, Share, SSS_SHAMIR_GF256_V1};
 
 /// Project display name used across bindings and diagnostics.
 pub const PROJECT_NAME: &str = "Multi-Card Vault";
@@ -208,7 +208,7 @@ pub fn create_vault_with_rng(
         kdf_params,
     };
     let master_secret = Zeroizing::new(random_secret(rng).to_vec());
-    let shares = SharksSecretSharing::split(
+    let shares = BlahajSecretSharing::split(
         master_secret.as_slice(),
         request.threshold,
         request.total,
@@ -358,7 +358,7 @@ fn recover_unlock_context(
     }
 
     let master_secret = Zeroizing::new(
-        SharksSecretSharing::recover(vault_blob.threshold, &shares).map_err(map_shamir_error)?,
+        BlahajSecretSharing::recover(vault_blob.threshold, &shares).map_err(map_shamir_error)?,
     );
     if master_secret.len() != SECRET_LEN {
         return Err(McvError::ShamirError);
@@ -791,9 +791,9 @@ mod tests {
         let mut rng = ChaCha20Rng::from_seed([4_u8; 32]);
         for _case in 0..1000 {
             let secret = random_secret(&mut rng);
-            let shares = SharksSecretSharing::split(&secret, 3, 5, &mut rng)
+            let shares = BlahajSecretSharing::split(&secret, 3, 5, &mut rng)
                 .map_err(|_error| McvError::ShamirError)?;
-            let recovered = SharksSecretSharing::recover(3, &shares[0..3])
+            let recovered = BlahajSecretSharing::recover(3, &shares[0..3])
                 .map_err(|_error| McvError::ShamirError)?;
             assert_eq!(recovered, secret);
         }

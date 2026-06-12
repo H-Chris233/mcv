@@ -39,13 +39,14 @@ class CreateVaultUseCase(
         val deviceSecret = deviceSecretRepository.generateDeviceSecret()
         try {
             val plaintext = core.emptyVaultPlaintext()
-            val created = core.createVault(
-                password = password,
-                threshold = threshold,
-                total = total,
-                deviceSecret = deviceSecret,
-                initialPlaintext = plaintext,
-            )
+            val created =
+                core.createVault(
+                    password = password,
+                    threshold = threshold,
+                    total = total,
+                    deviceSecret = deviceSecret,
+                    initialPlaintext = plaintext,
+                )
             val vaultIdHex = created.vaultId.toStableHex()
             val now = System.currentTimeMillis()
 
@@ -70,13 +71,14 @@ class CreateVaultUseCase(
             }
 
             return CreatedVaultSession(
-                summary = CreatedVaultSummary(
-                    vaultIdHex = vaultIdHex,
-                    displayName = normalizedDisplayName,
-                    threshold = threshold,
-                    total = total,
-                    cardPayloadCount = created.cardPayloads.size,
-                ),
+                summary =
+                    CreatedVaultSummary(
+                        vaultIdHex = vaultIdHex,
+                        displayName = normalizedDisplayName,
+                        threshold = threshold,
+                        total = total,
+                        cardPayloadCount = created.cardPayloads.size,
+                    ),
                 cardPayloads = created.cardPayloads,
             )
         } finally {

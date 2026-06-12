@@ -15,11 +15,11 @@ Multi-Card Vault (MCV) is an Android-only, local-first encrypted vault experimen
 This repository currently contains:
 
 - Rust multi-crate workspace.
-- Rust M1 protocol core for create/unlock/update flows.
-- Android Compose app with Rust UniFFI integration, Room persistence, Android Keystore device-secret wrapping, NFC NDEF write/read/unlock, saved Vault unlock, and a minimal vault entry editor.
-- Initial documentation, ADRs, and CI workflows.
+- Rust protocol core for create/unlock/update flows.
+- Android Compose app with Rust UniFFI integration, Room persistence, DataStore settings, Android Keystore device-secret wrapping, NFC NDEF write/read/unlock, saved Vault unlock, diagnostics, and a minimal vault entry editor.
+- Protocol documentation, threat model, ADRs, test vectors, and CI workflows.
 
-M5 can write generated encrypted Card Payloads to NDEF tags, read threshold tags back, unlock the just-created Vault, display Vault Plaintext entries, add/edit/delete simple text entries through Rust `update_vault`, and unlock previously saved Vaults after app restart from the local Vault list. It does not implement full multi-vault navigation or app-restart recovery for an interrupted write-card flow yet.
+The v0.1 MVP can write generated encrypted Card Payloads to NDEF tags, read threshold tags back, unlock the just-created Vault, display Vault Plaintext entries, add/edit/delete simple text entries through Rust `update_vault`, unlock previously saved Vaults after app restart from the local Vault list, persist lightweight settings in DataStore, and produce release artifacts through CI. It does not implement full multi-vault navigation or app-restart recovery for an interrupted write-card flow yet.
 
 ## Repository Layout
 
@@ -40,6 +40,8 @@ Rust:
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo audit
+cargo deny check advisories bans sources
 cargo build -p mcv-uniffi
 cargo run -p mcv-bindgen -- target/debug/libmcv_uniffi.so bindings/kotlin
 ```
@@ -50,6 +52,9 @@ Android:
 rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
 cargo install cargo-ndk --locked
 sdkmanager "ndk;27.2.12479018"
+./gradlew -p android ktlintCheck
+./gradlew -p android detekt
+./gradlew -p android lintDebug
 ./gradlew -p android test
 ./gradlew -p android assembleDebug
 ```

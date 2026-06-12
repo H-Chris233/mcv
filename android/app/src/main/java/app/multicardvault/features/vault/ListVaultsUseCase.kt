@@ -13,13 +13,14 @@ data class SavedVaultSummary(
 class ListVaultsUseCase(
     private val vaultRepository: VaultRepository,
 ) {
-    suspend operator fun invoke(): List<SavedVaultSummary> = vaultRepository.listVaults().map { vault ->
-        SavedVaultSummary(
-            vaultIdHex = vault.id,
-            displayName = vault.displayName,
-            threshold = vault.threshold,
-            total = vault.total,
-            updatedAt = vault.updatedAt,
-        )
-    }
+    suspend operator fun invoke(): List<SavedVaultSummary> =
+        vaultRepository.listVaults().map { vault ->
+            SavedVaultSummary(
+                vaultIdHex = vault.id,
+                displayName = vault.displayName,
+                threshold = vault.threshold,
+                total = vault.total,
+                updatedAt = vault.updatedAt,
+            )
+        }
 }

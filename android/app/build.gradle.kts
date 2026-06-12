@@ -1,3 +1,4 @@
+import io.gitlab.arturbosch.detekt.Detekt
 import org.gradle.internal.os.OperatingSystem
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
@@ -6,15 +7,18 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    id("org.jlleitschuh.gradle.ktlint")
+    id("io.gitlab.arturbosch.detekt")
 }
 
 val repoRoot = layout.projectDirectory.dir("../..")
 val generatedRustJniLibs = layout.buildDirectory.dir("generated/rustJniLibs")
-val hostRustLibraryName = when {
-    OperatingSystem.current().isMacOsX -> "libmcv_uniffi.dylib"
-    OperatingSystem.current().isWindows -> "mcv_uniffi.dll"
-    else -> "libmcv_uniffi.so"
-}
+val hostRustLibraryName =
+    when {
+        OperatingSystem.current().isMacOsX -> "libmcv_uniffi.dylib"
+        OperatingSystem.current().isWindows -> "mcv_uniffi.dll"
+        else -> "libmcv_uniffi.so"
+    }
 val hostRustLibrary = repoRoot.file("target/debug/$hostRustLibraryName")
 
 android {
@@ -28,7 +32,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0-m0"
+        versionName = "0.1.0"
     }
 
     buildFeatures {
@@ -52,12 +56,30 @@ android {
     }
 }
 
+detekt {
+    buildUponDefaultConfig = true
+    allRules = false
+    config.setFrom(rootProject.files("config/detekt/detekt.yml"))
+}
+
+ktlint {
+    baseline.set(project.file("config/ktlint/baseline.xml"))
+    filter {
+        exclude("**/bindings/**")
+        exclude("**/mcv_uniffi.kt")
+        exclude { entry ->
+            entry.file.absolutePath.contains("/bindings/kotlin/")
+        }
+    }
+}
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
@@ -104,7 +126,8 @@ tasks.register<Exec>("buildAndroidRustLibraries") {
     outputs.dir(generatedRustJniLibs)
 }
 
-tasks.matching { it.name == "mergeDebugJniLibFolders" || it.name == "mergeReleaseJniLibFolders" }
+tasks
+    .matching { it.name == "mergeDebugJniLibFolders" || it.name == "mergeReleaseJniLibFolders" }
     .configureEach {
         dependsOn("buildAndroidRustLibraries")
     }
@@ -118,4 +141,8 @@ tasks.withType<KotlinCompile>().configureEach {
     compilerOptions {
         freeCompilerArgs.add("-opt-in=kotlin.ExperimentalUnsignedTypes")
     }
+}
+
+tasks.withType<Detekt>().configureEach {
+    jvmTarget = "17"
 }

@@ -21,9 +21,10 @@ fun String.hexToByteArray(): ByteArray {
     }
 }
 
-private fun hexValue(char: Char): Int = when (char) {
-    in '0'..'9' -> char - '0'
-    in 'a'..'f' -> char - 'a' + 10
-    in 'A'..'F' -> char - 'A' + 10
-    else -> error("invalid hex character")
-}
+private fun hexValue(char: Char): Int =
+    when (char) {
+        in '0'..'9' -> char - '0'
+        in 'a'..'f' -> char - 'a' + 10
+        in 'A'..'F' -> char - 'A' + 10
+        else -> error("invalid hex character")
+    }

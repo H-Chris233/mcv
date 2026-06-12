@@ -12,15 +12,17 @@ import app.multicardvault.features.vault.UpdateVaultUseCase
 import app.multicardvault.features.vault.VaultEntry
 import app.multicardvault.features.vault.VaultEntryDraft
 import app.multicardvault.nfc.NfcCardResult
-import java.security.SecureRandom
+import app.multicardvault.settings.AppSettings
+import app.multicardvault.settings.AppSettingsRepository
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.security.SecureRandom
 
 data class CreateVaultFormState(
     val displayName: String = "Personal Vault",
@@ -31,7 +33,9 @@ data class CreateVaultFormState(
 
 sealed interface CreateVaultUiState {
     data object Editing : CreateVaultUiState
+
     data object Creating : CreateVaultUiState
+
     data class WritingCards(
         val summary: CreatedVaultSummary,
         val writtenCount: Int,
@@ -61,11 +65,16 @@ sealed interface CreateVaultUiState {
         val message: String? = null,
     ) : CreateVaultUiState
 
-    data class Failed(val message: String) : CreateVaultUiState
+    data class Failed(
+        val message: String,
+    ) : CreateVaultUiState
 }
 
 sealed interface NfcCommand {
-    data class Write(val payload: ByteArray) : NfcCommand
+    data class Write(
+        val payload: ByteArray,
+    ) : NfcCommand
+
     data object Read : NfcCommand
 }
 
@@ -74,6 +83,7 @@ class CreateVaultViewModel(
     private val listVaultsUseCase: ListVaultsUseCase,
     private val unlockVaultUseCase: UnlockVaultUseCase,
     private val updateVaultUseCase: UpdateVaultUseCase,
+    private val appSettingsRepository: AppSettingsRepository,
     private val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val entryIdGenerator: () -> String = { generateEntryIdHex() },
     private val clock: () -> Long = { System.currentTimeMillis() },
@@ -87,12 +97,16 @@ class CreateVaultViewModel(
     private val _savedVaults = MutableStateFlow<List<SavedVaultSummary>>(emptyList())
     val savedVaults: StateFlow<List<SavedVaultSummary>> = _savedVaults.asStateFlow()
 
+    private val _settings = MutableStateFlow(AppSettings())
+    val settings: StateFlow<AppSettings> = _settings.asStateFlow()
+
     private var currentSession: CreatedVaultSession? = null
     private val writtenPayloadIndexes = mutableSetOf<Int>()
     private val scannedPayloads = mutableListOf<ByteArray>()
 
     init {
         refreshSavedVaults()
+        observeSettings()
     }
 
     fun updateDisplayName(value: String) {
@@ -111,31 +125,32 @@ class CreateVaultViewModel(
         val snapshot = _form.value
         viewModelScope.launch {
             _uiState.value = CreateVaultUiState.Creating
-            _uiState.value = runCatching {
-                withContext(workDispatcher) {
-                    createVaultUseCase(
-                        displayName = snapshot.displayName,
-                        password = snapshot.password,
-                        threshold = snapshot.threshold,
-                        total = snapshot.total,
-                    )
-                }
-            }.fold(
-                onSuccess = { session ->
-                    currentSession = session
-                    writtenPayloadIndexes.clear()
-                    scannedPayloads.clear()
-                    refreshSavedVaults()
-                    CreateVaultUiState.WritingCards(
-                        summary = session.summary,
-                        writtenCount = 0,
-                        total = session.cardPayloads.size,
-                        nextCardNumber = 1,
-                        message = "请贴近第 1 张空白 NDEF 标签。",
-                    )
-                },
-                onFailure = { CreateVaultUiState.Failed(UserSafeCreateError) },
-            )
+            _uiState.value =
+                runCatching {
+                    withContext(workDispatcher) {
+                        createVaultUseCase(
+                            displayName = snapshot.displayName,
+                            password = snapshot.password,
+                            threshold = snapshot.threshold,
+                            total = snapshot.total,
+                        )
+                    }
+                }.fold(
+                    onSuccess = { session ->
+                        currentSession = session
+                        writtenPayloadIndexes.clear()
+                        scannedPayloads.clear()
+                        refreshSavedVaults()
+                        CreateVaultUiState.WritingCards(
+                            summary = session.summary,
+                            writtenCount = 0,
+                            total = session.cardPayloads.size,
+                            nextCardNumber = 1,
+                            message = "请贴近第 1 张空白 NDEF 标签。",
+                        )
+                    },
+                    onFailure = { CreateVaultUiState.Failed(UserSafeCreateError) },
+                )
         }
     }
 
@@ -149,25 +164,28 @@ class CreateVaultViewModel(
         if (_uiState.value is CreateVaultUiState.ReadingCards) return
         if (_uiState.value is CreateVaultUiState.Unlocking) return
 
-        val summary = CreatedVaultSummary(
-            vaultIdHex = vault.vaultIdHex,
-            displayName = vault.displayName,
-            threshold = vault.threshold,
-            total = vault.total,
-            cardPayloadCount = 0,
-        )
-        currentSession = CreatedVaultSession(
-            summary = summary,
-            cardPayloads = emptyList(),
-        )
+        val summary =
+            CreatedVaultSummary(
+                vaultIdHex = vault.vaultIdHex,
+                displayName = vault.displayName,
+                threshold = vault.threshold,
+                total = vault.total,
+                cardPayloadCount = 0,
+            )
+        currentSession =
+            CreatedVaultSession(
+                summary = summary,
+                cardPayloads = emptyList(),
+            )
         writtenPayloadIndexes.clear()
         scannedPayloads.clear()
-        _uiState.value = CreateVaultUiState.ReadingCards(
-            summary = summary,
-            readCount = 0,
-            threshold = summary.threshold,
-            message = "请刷入任意 ${summary.threshold} 张卡解锁已有保险库。",
-        )
+        _uiState.value =
+            CreateVaultUiState.ReadingCards(
+                summary = summary,
+                readCount = 0,
+                threshold = summary.threshold,
+                message = "请刷入任意 ${summary.threshold} 张卡解锁已有保险库。",
+            )
     }
 
     fun nextNfcCommand(): NfcCommand? {
@@ -216,14 +234,16 @@ class CreateVaultViewModel(
         if (state.isSaving) return
 
         val entry = state.unlocked.entries.firstOrNull { it.idHex == entryIdHex } ?: return
-        _uiState.value = state.copy(
-            draft = VaultEntryDraft(
-                editingEntryIdHex = entry.idHex,
-                title = entry.title,
-                content = entry.content,
-            ),
-            message = null,
-        )
+        _uiState.value =
+            state.copy(
+                draft =
+                    VaultEntryDraft(
+                        editingEntryIdHex = entry.idHex,
+                        title = entry.title,
+                        content = entry.content,
+                    ),
+                message = null,
+            )
     }
 
     fun cancelEntryEdit() {
@@ -248,27 +268,29 @@ class CreateVaultViewModel(
         }
 
         val now = clock()
-        val nextEntries = if (state.draft.editingEntryIdHex == null) {
-            state.unlocked.entries + VaultEntry(
-                idHex = entryIdGenerator(),
-                title = title,
-                content = content,
-                createdAt = now,
-                updatedAt = now,
-            )
-        } else {
-            state.unlocked.entries.map { entry ->
-                if (entry.idHex == state.draft.editingEntryIdHex) {
-                    entry.copy(
+        val nextEntries =
+            if (state.draft.editingEntryIdHex == null) {
+                state.unlocked.entries +
+                    VaultEntry(
+                        idHex = entryIdGenerator(),
                         title = title,
                         content = content,
-                        updatedAt = maxOf(now, entry.createdAt),
+                        createdAt = now,
+                        updatedAt = now,
                     )
-                } else {
-                    entry
+            } else {
+                state.unlocked.entries.map { entry ->
+                    if (entry.idHex == state.draft.editingEntryIdHex) {
+                        entry.copy(
+                            title = title,
+                            content = content,
+                            updatedAt = maxOf(now, entry.createdAt),
+                        )
+                    } else {
+                        entry
+                    }
                 }
             }
-        }
 
         persistUnlockedEntries(
             state = state,
@@ -290,13 +312,26 @@ class CreateVaultViewModel(
             state = state,
             entries = nextEntries,
             updatedAt = clock(),
-            nextDraft = if (state.draft.editingEntryIdHex == entryIdHex) {
-                VaultEntryDraft()
-            } else {
-                state.draft
-            },
+            nextDraft =
+                if (state.draft.editingEntryIdHex == entryIdHex) {
+                    VaultEntryDraft()
+                } else {
+                    state.draft
+                },
             successMessage = "条目已删除。",
         )
+    }
+
+    fun setOnboardingCompleted(value: Boolean) {
+        updateSettings { appSettingsRepository.setOnboardingCompleted(value) }
+    }
+
+    fun setNfcExperimentalEnabled(value: Boolean) {
+        updateSettings { appSettingsRepository.setNfcExperimentalEnabled(value) }
+    }
+
+    fun setDiagnosticsEnabled(value: Boolean) {
+        updateSettings { appSettingsRepository.setDiagnosticsEnabled(value) }
     }
 
     private fun handleWriteResult(
@@ -312,22 +347,23 @@ class CreateVaultViewModel(
         val writtenIndex = nextWriteIndex(session) ?: return
         writtenPayloadIndexes += writtenIndex
         val nextIndex = nextWriteIndex(session)
-        _uiState.value = if (nextIndex == null) {
-            CreateVaultUiState.ReadingCards(
-                summary = session.summary,
-                readCount = 0,
-                threshold = session.summary.threshold,
-                message = "写卡完成。请刷入任意 ${session.summary.threshold} 张卡解锁。",
-            )
-        } else {
-            CreateVaultUiState.WritingCards(
-                summary = session.summary,
-                writtenCount = writtenPayloadIndexes.size,
-                total = session.cardPayloads.size,
-                nextCardNumber = nextIndex + 1,
-                message = "写入成功。请贴近第 ${nextIndex + 1} 张空白 NDEF 标签。",
-            )
-        }
+        _uiState.value =
+            if (nextIndex == null) {
+                CreateVaultUiState.ReadingCards(
+                    summary = session.summary,
+                    readCount = 0,
+                    threshold = session.summary.threshold,
+                    message = "写卡完成。请刷入任意 ${session.summary.threshold} 张卡解锁。",
+                )
+            } else {
+                CreateVaultUiState.WritingCards(
+                    summary = session.summary,
+                    writtenCount = writtenPayloadIndexes.size,
+                    total = session.cardPayloads.size,
+                    nextCardNumber = nextIndex + 1,
+                    message = "写入成功。请贴近第 ${nextIndex + 1} 张空白 NDEF 标签。",
+                )
+            }
     }
 
     private fun handleReadResult(
@@ -348,33 +384,36 @@ class CreateVaultViewModel(
         if (scannedPayloads.size >= state.threshold) {
             unlockScannedCards(state.summary)
         } else {
-            _uiState.value = state.copy(
-                readCount = scannedPayloads.size,
-                message = "读取成功。请继续刷入卡片。",
-            )
+            _uiState.value =
+                state.copy(
+                    readCount = scannedPayloads.size,
+                    message = "读取成功。请继续刷入卡片。",
+                )
         }
     }
 
     private fun unlockScannedCards(summary: CreatedVaultSummary) {
         val payloads = scannedPayloads.map { it.copyOf() }
         viewModelScope.launch {
-            _uiState.value = CreateVaultUiState.Unlocking(
-                summary = summary,
-                readCount = payloads.size,
-                threshold = summary.threshold,
-            )
-            _uiState.value = runCatching {
-                withContext(workDispatcher) {
-                    unlockVaultUseCase(
-                        vaultIdHex = summary.vaultIdHex,
-                        password = _form.value.password,
-                        cardPayloads = payloads,
-                    )
-                }
-            }.fold(
-                onSuccess = { unlocked -> CreateVaultUiState.Unlocked(summary, unlocked) },
-                onFailure = { CreateVaultUiState.Failed(UnlockFailedMessage) },
-            )
+            _uiState.value =
+                CreateVaultUiState.Unlocking(
+                    summary = summary,
+                    readCount = payloads.size,
+                    threshold = summary.threshold,
+                )
+            _uiState.value =
+                runCatching {
+                    withContext(workDispatcher) {
+                        unlockVaultUseCase(
+                            vaultIdHex = summary.vaultIdHex,
+                            password = _form.value.password,
+                            cardPayloads = payloads,
+                        )
+                    }
+                }.fold(
+                    onSuccess = { unlocked -> CreateVaultUiState.Unlocked(summary, unlocked) },
+                    onFailure = { CreateVaultUiState.Failed(UnlockFailedMessage) },
+                )
         }
     }
 
@@ -390,61 +429,83 @@ class CreateVaultViewModel(
 
         viewModelScope.launch {
             _uiState.value = state.copy(isSaving = true, message = "正在保存 Vault Blob。")
-            _uiState.value = runCatching {
-                withContext(workDispatcher) {
-                    updateVaultUseCase(
-                        vaultIdHex = state.summary.vaultIdHex,
-                        password = password,
-                        cardPayloads = payloads,
-                        entries = entries,
-                        updatedAt = updatedAt,
-                    )
-                }
-            }.fold(
-                onSuccess = { updated ->
-                    refreshSavedVaults()
-                    state.copy(
-                        unlocked = state.unlocked.copy(
-                            plaintextSize = updated.plaintextSize,
+            _uiState.value =
+                runCatching {
+                    withContext(workDispatcher) {
+                        updateVaultUseCase(
+                            vaultIdHex = state.summary.vaultIdHex,
+                            password = password,
+                            cardPayloads = payloads,
                             entries = entries,
-                        ),
-                        draft = nextDraft,
-                        isSaving = false,
-                        message = successMessage,
-                    )
-                },
-                onFailure = {
-                    state.copy(
-                        isSaving = false,
-                        message = SaveFailedMessage,
-                    )
-                },
-            )
+                            updatedAt = updatedAt,
+                        )
+                    }
+                }.fold(
+                    onSuccess = { updated ->
+                        refreshSavedVaults()
+                        state.copy(
+                            unlocked =
+                                state.unlocked.copy(
+                                    plaintextSize = updated.plaintextSize,
+                                    entries = entries,
+                                ),
+                            draft = nextDraft,
+                            isSaving = false,
+                            message = successMessage,
+                        )
+                    },
+                    onFailure = {
+                        state.copy(
+                            isSaving = false,
+                            message = SaveFailedMessage,
+                        )
+                    },
+                )
         }
     }
 
     private fun refreshSavedVaults() {
         viewModelScope.launch {
-            val vaults = runCatching {
-                withContext(workDispatcher) {
-                    listVaultsUseCase()
-                }
-            }.getOrDefault(emptyList())
+            val vaults =
+                runCatching {
+                    withContext(workDispatcher) {
+                        listVaultsUseCase()
+                    }
+                }.getOrDefault(emptyList())
             _savedVaults.value = vaults
+        }
+    }
+
+    private fun observeSettings() {
+        viewModelScope.launch {
+            appSettingsRepository.settings.collect { settings ->
+                _settings.value = settings
+            }
+        }
+    }
+
+    private fun updateSettings(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(workDispatcher) {
+                    block()
+                }
+            }
         }
     }
 
     private fun nextWriteIndex(session: CreatedVaultSession): Int? =
         session.cardPayloads.indices.firstOrNull { it !in writtenPayloadIndexes }
 
-    private fun nfcMessage(result: NfcCardResult): String = when (result) {
-        is NfcCardResult.Success -> "NFC 操作成功。"
-        is NfcCardResult.UnsupportedTag -> result.reason
-        NfcCardResult.EmptyTag -> "标签为空，或没有本应用的 Card Payload。"
-        is NfcCardResult.InvalidPayload -> result.reason
-        is NfcCardResult.CapacityTooSmall -> "标签容量不足，需要 ${result.requiredBytes} 字节，可用 ${result.maxBytes} 字节。"
-        is NfcCardResult.IoError -> result.reason
-    }
+    private fun nfcMessage(result: NfcCardResult): String =
+        when (result) {
+            is NfcCardResult.Success -> "NFC 操作成功。"
+            is NfcCardResult.UnsupportedTag -> result.reason
+            NfcCardResult.EmptyTag -> "标签为空，或没有本应用的 Card Payload。"
+            is NfcCardResult.InvalidPayload -> result.reason
+            is NfcCardResult.CapacityTooSmall -> "标签容量不足，需要 ${result.requiredBytes} 字节，可用 ${result.maxBytes} 字节。"
+            is NfcCardResult.IoError -> result.reason
+        }
 
     private fun resetFailure() {
         if (_uiState.value is CreateVaultUiState.Failed) {
@@ -457,6 +518,7 @@ class CreateVaultViewModel(
         private val listVaultsUseCase: ListVaultsUseCase,
         private val unlockVaultUseCase: UnlockVaultUseCase,
         private val updateVaultUseCase: UpdateVaultUseCase,
+        private val appSettingsRepository: AppSettingsRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -466,6 +528,7 @@ class CreateVaultViewModel(
                 listVaultsUseCase = listVaultsUseCase,
                 unlockVaultUseCase = unlockVaultUseCase,
                 updateVaultUseCase = updateVaultUseCase,
+                appSettingsRepository = appSettingsRepository,
             ) as T
         }
     }
