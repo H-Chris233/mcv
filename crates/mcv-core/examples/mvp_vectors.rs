@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let shares = BlahajSecretSharing::split(&secret, 3, 5, &mut rng)?;
     let recovered = BlahajSecretSharing::recover(3, &shares[1..4])?;
 
-    println!("password_key_hex={}", hex(password_key.as_slice()));
+    println!("argon2id_output_hex={}", hex(password_key.as_slice()));
     println!("final_key_hex={}", hex(final_key.as_slice()));
     println!("aead_ciphertext_hex={}", hex(&ciphertext));
     println!("aead_decrypted_hex={}", hex(decrypted.as_slice()));
