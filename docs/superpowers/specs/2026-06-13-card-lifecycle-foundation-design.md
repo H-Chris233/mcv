@@ -41,6 +41,7 @@ Implement these capabilities:
 - Card Inventory:
   - Add local Room metadata for scanned Cards.
   - Track Vault ID, Scheme ID, Share Index, display label, status, first seen, last seen, and last check result.
+  - Enforce one local inventory record for each Vault ID, Scheme ID, and Share Index.
   - Treat inventory as rebuildable metadata, not recovery material.
 - Card Verification:
   - Let users scan Cards to verify they belong to a known Vault and current Card Set.
@@ -113,6 +114,8 @@ CardInventoryRecord
 - lastCheckMessage
 ```
 
+The Room schema should add this table through an explicit migration. Do not keep relying on destructive migration for post-MVP user builds.
+
 Card status should remain coarse and user-safe:
 
 ```text
@@ -150,6 +153,14 @@ The UI may stay visually simple, but state should become clearer:
 This can still live in one Activity during this slice, but state should be separated enough that a later navigation refactor is straightforward.
 
 ## Data Flow
+
+### Settings Migration
+
+1. Read existing `defaultThreshold` and `defaultTotal` settings.
+2. If the stored pair is a Safe Threshold Preset, keep it.
+3. If it is unsafe or unknown, migrate to the default `3-of-5` preset.
+4. Create and reissue flows should only accept Safe Threshold Presets.
+5. Existing Vaults remain unlockable even if their old Threshold/Total pair is no longer offered for new Vault creation.
 
 ### Verify Card
 
@@ -209,8 +220,10 @@ Required cases:
 ### Android Unit Tests
 
 - Card Inventory repository stores and updates records.
+- Room migration preserves existing Vault metadata while adding Card Inventory.
 - Verify-card use case classifies current, old, wrong-vault, duplicate, and invalid cards.
 - Safe Threshold Presets reject unsafe combinations.
+- Existing unsafe settings migrate to the default safe preset.
 - Interrupted recovery grouping picks a Scheme ID only after reaching Threshold.
 - Reissue flow does not persist complete Card Payloads.
 
