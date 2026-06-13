@@ -37,16 +37,16 @@ class DataStoreAppSettingsRepositoryTest {
         }
 
     @Test
-    fun thresholdIsClampedToTotal() =
+    fun unsafeThresholdSettingsFallbackToDefaultPreset() =
         runTest {
             val repository = repository(backgroundScope)
 
-            repository.setDefaultTotal(2)
-            repository.setDefaultThreshold(5)
+            repository.setDefaultTotal(5)
+            repository.setDefaultThreshold(4)
 
             val settings = repository.settings.first()
-            assertEquals(2, settings.defaultThreshold)
-            assertEquals(2, settings.defaultTotal)
+            assertEquals(3, settings.defaultThreshold)
+            assertEquals(5, settings.defaultTotal)
             assertFalse(settings.diagnosticsEnabled)
         }
 

@@ -67,6 +67,24 @@ class CreateVaultUseCaseTest {
 
             assertTrue(result.isFailure)
         }
+
+    @Test
+    fun createVaultRejectsUnsafeThresholdPreset() =
+        runTest {
+            val useCase = CreateVaultUseCase(FakeMcvCore(), FakeVaultRepository())
+
+            val result =
+                runCatching {
+                    useCase(
+                        displayName = "Primary",
+                        password = "passphrase",
+                        threshold = 4,
+                        total = 5,
+                    )
+                }
+
+            assertTrue(result.isFailure)
+        }
 }
 
 private class FakeMcvCore : McvCore {
