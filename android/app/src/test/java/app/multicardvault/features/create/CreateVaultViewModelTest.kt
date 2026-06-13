@@ -3,6 +3,7 @@ package app.multicardvault.features.create
 import app.multicardvault.MainDispatcherRule
 import app.multicardvault.core.McvCore
 import app.multicardvault.core.McvCoreException
+import app.multicardvault.core.RustCardPayloadInspection
 import app.multicardvault.core.RustCreateVaultResult
 import app.multicardvault.core.RustUnlockVaultResult
 import app.multicardvault.core.RustUpdateVaultResult
@@ -350,6 +351,18 @@ private class ViewModelFakeMcvCore : McvCore {
         require(newPlaintext.contentEquals(byteArrayOf(1)))
         return RustUpdateVaultResult(List(5) { index -> byteArrayOf((50 + index).toByte()) })
     }
+
+    override fun inspectCardPayload(cardPayload: ByteArray): RustCardPayloadInspection =
+        RustCardPayloadInspection(
+            vaultId = ByteArray(16) { 1 },
+            schemeId = ByteArray(16) { 2 },
+            threshold = 3,
+            total = 5,
+            shareIndex = 1,
+            kdfId = 1,
+            aeadId = 1,
+            formatVersion = 1,
+        )
 }
 
 private class ViewModelFakeVaultRepository : VaultRepository {

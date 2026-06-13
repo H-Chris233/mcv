@@ -12,6 +12,7 @@ import app.multicardvault.uniffi.createVault as ffiCreateVault
 import app.multicardvault.uniffi.decodeVaultPlaintext as ffiDecodeVaultPlaintext
 import app.multicardvault.uniffi.emptyVaultPlaintext as ffiEmptyVaultPlaintext
 import app.multicardvault.uniffi.encodeVaultPlaintext as ffiEncodeVaultPlaintext
+import app.multicardvault.uniffi.inspectCardPayload as ffiInspectCardPayload
 import app.multicardvault.uniffi.unlockVault as ffiUnlockVault
 import app.multicardvault.uniffi.updateVault as ffiUpdateVault
 
@@ -31,6 +32,17 @@ data class RustUnlockVaultResult(
 
 data class RustUpdateVaultResult(
     val cardPayloads: List<ByteArray>,
+)
+
+data class RustCardPayloadInspection(
+    val vaultId: ByteArray,
+    val schemeId: ByteArray,
+    val threshold: Int,
+    val total: Int,
+    val shareIndex: Int,
+    val kdfId: Int,
+    val aeadId: Int,
+    val formatVersion: Int,
 )
 
 data class RustVaultPlaintext(
@@ -73,6 +85,8 @@ interface McvCore {
         cardPayloads: List<ByteArray>,
         newPlaintext: ByteArray,
     ): RustUpdateVaultResult
+
+    fun inspectCardPayload(cardPayload: ByteArray): RustCardPayloadInspection
 }
 
 class RustMcvCore : McvCore {
@@ -196,6 +210,26 @@ class RustMcvCore : McvCore {
 
         return RustUpdateVaultResult(
             cardPayloads = response.cardPayloads,
+        )
+    }
+
+    override fun inspectCardPayload(cardPayload: ByteArray): RustCardPayloadInspection {
+        val inspection =
+            try {
+                ffiInspectCardPayload(cardPayload)
+            } catch (error: McvFfiException) {
+                throw McvCoreException("Rust core rejected card payload inspection", error)
+            }
+
+        return RustCardPayloadInspection(
+            vaultId = inspection.vaultId,
+            schemeId = inspection.schemeId,
+            threshold = inspection.threshold.toInt(),
+            total = inspection.total.toInt(),
+            shareIndex = inspection.shareIndex.toInt(),
+            kdfId = inspection.kdfId.toInt(),
+            aeadId = inspection.aeadId.toInt(),
+            formatVersion = inspection.formatVersion.toInt(),
         )
     }
 }

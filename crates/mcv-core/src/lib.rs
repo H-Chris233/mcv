@@ -106,6 +106,27 @@ pub struct UpdateVaultResponse {
     pub card_payloads: Vec<Vec<u8>>,
 }
 
+/// Non-sensitive card payload metadata for local inventory and verification.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CardPayloadInspection {
+    /// Vault ID bytes.
+    pub vault_id: Vec<u8>,
+    /// Scheme ID bytes.
+    pub scheme_id: Vec<u8>,
+    /// Shares required to recover.
+    pub threshold: u8,
+    /// Total card payloads in the card set.
+    pub total: u8,
+    /// Current share index.
+    pub share_index: u8,
+    /// KDF algorithm identifier.
+    pub kdf_id: u8,
+    /// AEAD algorithm identifier.
+    pub aead_id: u8,
+    /// Card payload format version.
+    pub format_version: u8,
+}
+
 /// Multi-Card Vault core errors.
 #[derive(Debug, Error, PartialEq)]
 pub enum McvError {
@@ -173,6 +194,22 @@ pub fn empty_vault_plaintext() -> Result<Vec<u8>, McvError> {
     }
     .encode()
     .map_err(|_error| McvError::InvalidVaultPlaintext)
+}
+
+/// Inspects non-sensitive card payload metadata without decrypting card material.
+pub fn inspect_card_payload(bytes: &[u8]) -> Result<CardPayloadInspection, McvError> {
+    let card = CardPayloadV1::decode(bytes).map_err(map_card_format_error)?;
+    validate_algorithm_ids(card.kdf_id, card.aead_id, SSS_SHAMIR_GF256_V1)?;
+    Ok(CardPayloadInspection {
+        vault_id: card.vault_id,
+        scheme_id: card.scheme_id,
+        threshold: card.threshold,
+        total: card.total,
+        share_index: card.share_index,
+        kdf_id: card.kdf_id,
+        aead_id: card.aead_id,
+        format_version: FORMAT_VERSION_V1,
+    })
 }
 
 /// Creates a vault using production randomness and default KDF parameters.
@@ -702,6 +739,41 @@ mod tests {
 
         assert_eq!(result, Err(McvError::DuplicateShareIndex));
         Ok(())
+    }
+
+    #[test]
+    fn inspect_card_payload_returns_only_header_metadata() -> Result<(), McvError> {
+        let mut rng = ChaCha20Rng::seed_from_u64(42);
+        let created = create_vault_with_rng(
+            CreateVaultRequest {
+                password: "passphrase".to_owned(),
+                threshold: 2,
+                total: 3,
+                initial_plaintext: empty_vault_plaintext()?,
+            },
+            KdfParams::TEST,
+            &mut rng,
+        )?;
+
+        let inspection = inspect_card_payload(&created.card_payloads[0])?;
+
+        assert_eq!(inspection.vault_id, created.vault_id);
+        assert_eq!(inspection.scheme_id, created.scheme_id);
+        assert_eq!(inspection.threshold, 2);
+        assert_eq!(inspection.total, 3);
+        assert_eq!(inspection.share_index, 1);
+        assert_eq!(inspection.kdf_id, KDF_ARGON2ID_V1);
+        assert_eq!(inspection.aead_id, AEAD_XCHACHA20_POLY1305_V1);
+        assert_eq!(inspection.format_version, mcv_format::FORMAT_VERSION_V1);
+        Ok(())
+    }
+
+    #[test]
+    fn inspect_card_payload_rejects_malformed_payload() {
+        assert_eq!(
+            inspect_card_payload(b"not a card"),
+            Err(McvError::InvalidCardPayload)
+        );
     }
 
     #[test]
