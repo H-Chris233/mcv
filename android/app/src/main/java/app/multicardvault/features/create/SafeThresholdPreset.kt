@@ -6,7 +6,8 @@ enum class SafeThresholdPreset(
     val label: String,
 ) {
     TwoOfThree(2, 3, "2-of-3"),
-    ThreeOfFive(3, 5, "3-of-5");
+    ThreeOfFive(3, 5, "3-of-5"),
+    ;
 
     companion object {
         val Default: SafeThresholdPreset = ThreeOfFive

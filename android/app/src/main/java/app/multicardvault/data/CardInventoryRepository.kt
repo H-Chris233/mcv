@@ -20,24 +20,23 @@ class RoomCardInventoryRepository(
     private val dao: CardInventoryDao,
 ) : CardInventoryRepository {
     override suspend fun upsert(record: CardInventoryRecord) {
-        val existing =
+        val entity =
             dao.getCard(
                 vaultIdHex = record.vaultIdHex,
                 schemeIdHex = record.schemeIdHex,
                 shareIndex = record.shareIndex,
-            )?.toRecord()
+            )
+        val existing = entity?.toRecord()
         val next = merge(existing, record)
         dao.upsertCard(next.toEntity())
     }
 
-    override suspend fun listForVault(vaultIdHex: String): List<CardInventoryRecord> =
-        dao.listForVault(vaultIdHex).map { it.toRecord() }
+    override suspend fun listForVault(vaultIdHex: String): List<CardInventoryRecord> = dao.listForVault(vaultIdHex).map { it.toRecord() }
 
     override suspend fun listForCardSet(
         vaultIdHex: String,
         schemeIdHex: String,
-    ): List<CardInventoryRecord> =
-        dao.listForCardSet(vaultIdHex, schemeIdHex).map { it.toRecord() }
+    ): List<CardInventoryRecord> = dao.listForCardSet(vaultIdHex, schemeIdHex).map { it.toRecord() }
 
     override suspend fun markCurrentCardSet(
         vaultIdHex: String,

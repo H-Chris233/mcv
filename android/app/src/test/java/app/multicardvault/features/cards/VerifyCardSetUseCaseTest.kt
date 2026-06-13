@@ -188,14 +188,12 @@ private class VerifyFakeCardInventoryRepository : CardInventoryRepository {
         records += record
     }
 
-    override suspend fun listForVault(vaultIdHex: String): List<CardInventoryRecord> =
-        records.filter { it.vaultIdHex == vaultIdHex }
+    override suspend fun listForVault(vaultIdHex: String): List<CardInventoryRecord> = records.filter { it.vaultIdHex == vaultIdHex }
 
     override suspend fun listForCardSet(
         vaultIdHex: String,
         schemeIdHex: String,
-    ): List<CardInventoryRecord> =
-        records.filter { it.vaultIdHex == vaultIdHex && it.schemeIdHex == schemeIdHex }
+    ): List<CardInventoryRecord> = records.filter { it.vaultIdHex == vaultIdHex && it.schemeIdHex == schemeIdHex }
 
     override suspend fun markCurrentCardSet(
         vaultIdHex: String,

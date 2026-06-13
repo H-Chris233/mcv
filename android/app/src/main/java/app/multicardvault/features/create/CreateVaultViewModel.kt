@@ -4,6 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.multicardvault.core.toStableHex
+import app.multicardvault.features.cards.CardVerificationResult
+import app.multicardvault.features.cards.CardVerificationTarget
+import app.multicardvault.features.cards.InspectCardUseCase
+import app.multicardvault.features.cards.InterruptedReissueRecoveryResult
+import app.multicardvault.features.cards.RecoverInterruptedReissueUseCase
+import app.multicardvault.features.cards.ScannedCardPayload
+import app.multicardvault.features.cards.StartCardSetReissueUseCase
+import app.multicardvault.features.cards.VerifyCardSetUseCase
 import app.multicardvault.features.unlock.NotEnoughCardsException
 import app.multicardvault.features.unlock.UnlockVaultUseCase
 import app.multicardvault.features.unlock.UnlockedVaultSummary
@@ -58,6 +66,24 @@ sealed interface CreateVaultUiState {
         val threshold: Int,
     ) : CreateVaultUiState
 
+    data class VerifyingCard(
+        val summary: CreatedVaultSummary,
+        val currentSchemeIdHex: String,
+        val scannedShareIndexes: Set<Int>,
+        val message: String,
+    ) : CreateVaultUiState
+
+    data class CardVerified(
+        val summary: CreatedVaultSummary,
+        val result: CardVerificationResult,
+    ) : CreateVaultUiState
+
+    data class RecoveringInterruptedReissue(
+        val readCount: Int,
+        val threshold: Int,
+        val message: String,
+    ) : CreateVaultUiState
+
     data class Unlocked(
         val summary: CreatedVaultSummary,
         val unlocked: UnlockedVaultSummary,
@@ -84,6 +110,10 @@ class CreateVaultViewModel(
     private val listVaultsUseCase: ListVaultsUseCase,
     private val unlockVaultUseCase: UnlockVaultUseCase,
     private val updateVaultUseCase: UpdateVaultUseCase,
+    private val inspectCardUseCase: InspectCardUseCase,
+    private val verifyCardSetUseCase: VerifyCardSetUseCase,
+    private val startCardSetReissueUseCase: StartCardSetReissueUseCase,
+    private val recoverInterruptedReissueUseCase: RecoverInterruptedReissueUseCase,
     private val appSettingsRepository: AppSettingsRepository,
     private val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val entryIdGenerator: () -> String = { generateEntryIdHex() },
@@ -105,6 +135,7 @@ class CreateVaultViewModel(
     private var pendingUnlockedAfterRewrite: CreateVaultUiState.Unlocked? = null
     private val writtenPayloadIndexes = mutableSetOf<Int>()
     private val scannedPayloads = mutableListOf<ByteArray>()
+    private val interruptedScans = mutableListOf<ScannedCardPayload>()
 
     init {
         refreshSavedVaults()
@@ -233,6 +264,8 @@ class CreateVaultViewModel(
             }
 
             is CreateVaultUiState.ReadingCards -> NfcCommand.Read
+            is CreateVaultUiState.VerifyingCard -> NfcCommand.Read
+            is CreateVaultUiState.RecoveringInterruptedReissue -> NfcCommand.Read
             else -> null
         }
     }
@@ -241,8 +274,94 @@ class CreateVaultViewModel(
         when (val state = _uiState.value) {
             is CreateVaultUiState.WritingCards -> handleWriteResult(state, result)
             is CreateVaultUiState.ReadingCards -> handleReadResult(state, result)
+            is CreateVaultUiState.VerifyingCard -> handleVerifyResult(state, result)
+            is CreateVaultUiState.RecoveringInterruptedReissue -> handleInterruptedRecoveryResult(state, result)
             else -> Unit
         }
+    }
+
+    fun startVerifyCurrentCard() {
+        val state = _uiState.value as? CreateVaultUiState.Unlocked ?: return
+        _uiState.value =
+            CreateVaultUiState.VerifyingCard(
+                summary = state.summary,
+                currentSchemeIdHex = state.unlocked.schemeIdHex,
+                scannedShareIndexes = emptySet(),
+                message = "请贴近要校验的 CUID 卡。",
+            )
+    }
+
+    fun startCardSetReissue() {
+        val state = _uiState.value as? CreateVaultUiState.Unlocked ?: return
+        val payloads = scannedPayloads.map { it.copyOf() }
+        if (payloads.size < state.unlocked.threshold) {
+            _uiState.value = state.copy(message = "当前会话没有足够卡片 payload，需重新刷卡解锁后再重发。")
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = state.copy(isSaving = true, message = "正在生成新的卡组。")
+            _uiState.value =
+                runCatching {
+                    withContext(workDispatcher) {
+                        startCardSetReissueUseCase(
+                            vaultIdHex = state.summary.vaultIdHex,
+                            password = _form.value.password,
+                            cardPayloads = payloads,
+                            entries = state.unlocked.entries,
+                            updatedAt = clock(),
+                        )
+                    }
+                }.fold(
+                    onSuccess = { reissue ->
+                        currentSession =
+                            CreatedVaultSession(
+                                summary = state.summary,
+                                cardPayloads = reissue.cardPayloads,
+                            )
+                        pendingUnlockedAfterRewrite = state.copy(isSaving = false, message = "卡组已重发。")
+                        writtenPayloadIndexes.clear()
+                        scannedPayloads.clear()
+                        CreateVaultUiState.WritingCards(
+                            summary = state.summary,
+                            writtenCount = 0,
+                            total = reissue.cardPayloads.size,
+                            nextCardNumber = 1,
+                            message = "请依次重写所有 CUID 卡。",
+                        )
+                    },
+                    onFailure = {
+                        state.copy(isSaving = false, message = "无法生成新的卡组。")
+                    },
+                )
+        }
+    }
+
+    fun startInterruptedReissueRecovery() {
+        if (_form.value.password.isEmpty()) {
+            _uiState.value = CreateVaultUiState.Failed("请输入主密码后再恢复中断重发。")
+            return
+        }
+        if (!canStartCardReading()) return
+        currentSession =
+            CreatedVaultSession(
+                summary =
+                    CreatedVaultSummary(
+                        vaultIdHex = "",
+                        displayName = "Recovered Vault",
+                        threshold = _form.value.threshold,
+                        total = _form.value.total,
+                        cardPayloadCount = 0,
+                    ),
+                cardPayloads = emptyList(),
+            )
+        interruptedScans.clear()
+        scannedPayloads.clear()
+        _uiState.value =
+            CreateVaultUiState.RecoveringInterruptedReissue(
+                readCount = 0,
+                threshold = _form.value.threshold,
+                message = "请刷入中断重发前后的 CUID 卡，凑够任一卡组门限后自动解锁。",
+            )
     }
 
     fun updateEntryTitle(value: String) {
@@ -436,6 +555,104 @@ class CreateVaultViewModel(
         }
     }
 
+    private fun handleVerifyResult(
+        state: CreateVaultUiState.VerifyingCard,
+        result: NfcCardResult,
+    ) {
+        if (result !is NfcCardResult.Success) {
+            _uiState.value = state.copy(message = nfcMessage(result))
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = state.copy(message = "正在校验卡片。")
+            _uiState.value =
+                runCatching {
+                    withContext(workDispatcher) {
+                        verifyCardSetUseCase(
+                            target =
+                                CardVerificationTarget(
+                                    vaultIdHex = state.summary.vaultIdHex,
+                                    currentSchemeIdHex = state.currentSchemeIdHex,
+                                    displayName = state.summary.displayName,
+                                ),
+                            cardPayload = result.payload,
+                            scannedShareIndexes = state.scannedShareIndexes,
+                        )
+                    }
+                }.fold(
+                    onSuccess = { verified ->
+                        CreateVaultUiState.CardVerified(
+                            summary = state.summary,
+                            result = verified,
+                        )
+                    },
+                    onFailure = {
+                        state.copy(message = "无法校验卡片。")
+                    },
+                )
+        }
+    }
+
+    private fun handleInterruptedRecoveryResult(
+        state: CreateVaultUiState.RecoveringInterruptedReissue,
+        result: NfcCardResult,
+    ) {
+        if (result !is NfcCardResult.Success) {
+            _uiState.value = state.copy(message = nfcMessage(result))
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = state.copy(message = "正在检查卡片所属卡组。")
+            _uiState.value =
+                runCatching {
+                    withContext(workDispatcher) {
+                        val inspection = inspectCardUseCase(result.payload)
+                        interruptedScans +=
+                            ScannedCardPayload(
+                                payload = result.payload.copyOf(),
+                                inspection = inspection,
+                            )
+                        recoverInterruptedReissueUseCase(interruptedScans.toList())
+                    }
+                }.fold(
+                    onSuccess = { recovery ->
+                        when (recovery) {
+                            is InterruptedReissueRecoveryResult.NeedsMoreCards ->
+                                CreateVaultUiState.RecoveringInterruptedReissue(
+                                    readCount = recovery.readCount,
+                                    threshold = recovery.threshold,
+                                    message = "已读取 ${recovery.readCount} 张有效卡，请继续刷入。",
+                                )
+
+                            is InterruptedReissueRecoveryResult.ReadyToUnlock -> {
+                                scannedPayloads.clear()
+                                scannedPayloads += recovery.cardPayloads.map { it.copyOf() }
+                                val summary =
+                                    CreatedVaultSummary(
+                                        vaultIdHex = recovery.vaultIdHex,
+                                        displayName = "Recovered Vault",
+                                        threshold = recovery.threshold,
+                                        total = recovery.total,
+                                        cardPayloadCount = 0,
+                                    )
+                                unlockScannedCards(summary)
+                                CreateVaultUiState.Unlocking(
+                                    summary = summary,
+                                    readCount = recovery.cardPayloads.size,
+                                    threshold = recovery.threshold,
+                                )
+                            }
+                        }
+                    },
+                    onFailure = {
+                        state.copy(message = "卡片不是有效的 MCV 卡片，请继续刷入。")
+                    },
+                )
+        }
+    }
+
     private fun unlockScannedCards(summary: CreatedVaultSummary) {
         val payloads = scannedPayloads.map { it.copyOf() }
         viewModelScope.launch {
@@ -590,6 +807,8 @@ class CreateVaultViewModel(
             is CreateVaultUiState.WritingCards -> false
             is CreateVaultUiState.ReadingCards -> false
             is CreateVaultUiState.Unlocking -> false
+            is CreateVaultUiState.VerifyingCard -> false
+            is CreateVaultUiState.RecoveringInterruptedReissue -> false
             else -> true
         }
 
@@ -616,6 +835,10 @@ class CreateVaultViewModel(
         private val listVaultsUseCase: ListVaultsUseCase,
         private val unlockVaultUseCase: UnlockVaultUseCase,
         private val updateVaultUseCase: UpdateVaultUseCase,
+        private val inspectCardUseCase: InspectCardUseCase,
+        private val verifyCardSetUseCase: VerifyCardSetUseCase,
+        private val startCardSetReissueUseCase: StartCardSetReissueUseCase,
+        private val recoverInterruptedReissueUseCase: RecoverInterruptedReissueUseCase,
         private val appSettingsRepository: AppSettingsRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -626,6 +849,10 @@ class CreateVaultViewModel(
                 listVaultsUseCase = listVaultsUseCase,
                 unlockVaultUseCase = unlockVaultUseCase,
                 updateVaultUseCase = updateVaultUseCase,
+                inspectCardUseCase = inspectCardUseCase,
+                verifyCardSetUseCase = verifyCardSetUseCase,
+                startCardSetReissueUseCase = startCardSetReissueUseCase,
+                recoverInterruptedReissueUseCase = recoverInterruptedReissueUseCase,
                 appSettingsRepository = appSettingsRepository,
             ) as T
         }

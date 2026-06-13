@@ -14,6 +14,8 @@ sealed interface InterruptedReissueRecoveryResult {
     data class ReadyToUnlock(
         val vaultIdHex: String,
         val schemeIdHex: String,
+        val threshold: Int,
+        val total: Int,
         val cardPayloads: List<ByteArray>,
     ) : InterruptedReissueRecoveryResult
 }
@@ -30,15 +32,18 @@ class RecoverInterruptedReissueUseCase {
                         .sortedBy { it.inspection.shareIndex }
                 }
 
-        val ready = groups.firstOrNull { cards ->
-            val threshold = cards.firstOrNull()?.inspection?.threshold ?: return@firstOrNull false
-            cards.size >= threshold
-        }
+        val ready =
+            groups.firstOrNull { cards ->
+                val threshold = cards.firstOrNull()?.inspection?.threshold ?: return@firstOrNull false
+                cards.size >= threshold
+            }
         if (ready != null) {
             val first = ready.first().inspection
             return InterruptedReissueRecoveryResult.ReadyToUnlock(
                 vaultIdHex = first.vaultIdHex,
                 schemeIdHex = first.schemeIdHex,
+                threshold = first.threshold,
+                total = first.total,
                 cardPayloads = ready.take(first.threshold).map { it.payload.copyOf() },
             )
         }

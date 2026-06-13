@@ -8,8 +8,15 @@ import app.multicardvault.core.RustCreateVaultResult
 import app.multicardvault.core.RustUnlockVaultResult
 import app.multicardvault.core.RustUpdateVaultResult
 import app.multicardvault.core.RustVaultPlaintext
+import app.multicardvault.data.CardInventoryRecord
+import app.multicardvault.data.CardInventoryRepository
+import app.multicardvault.data.CardInventoryStatus
 import app.multicardvault.data.VaultRecord
 import app.multicardvault.data.VaultRepository
+import app.multicardvault.features.cards.InspectCardUseCase
+import app.multicardvault.features.cards.RecoverInterruptedReissueUseCase
+import app.multicardvault.features.cards.StartCardSetReissueUseCase
+import app.multicardvault.features.cards.VerifyCardSetUseCase
 import app.multicardvault.features.unlock.UnlockVaultUseCase
 import app.multicardvault.features.vault.ListVaultsUseCase
 import app.multicardvault.features.vault.UpdateVaultUseCase
@@ -20,6 +27,7 @@ import app.multicardvault.uniffi.McvFfiException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -213,10 +221,78 @@ class CreateVaultViewModelTest {
             assertTrue(settings.diagnosticsEnabled)
         }
 
+    @Test
+    fun verifyCardScanUpdatesCardInventoryState() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val harness = testHarness()
+            val viewModel = harness.viewModel
+            unlockCreatedVault(viewModel)
+
+            viewModel.startVerifyCurrentCard()
+            assertTrue(viewModel.nextNfcCommand() is NfcCommand.Read)
+            viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(10)))
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value as CreateVaultUiState.CardVerified
+            assertEquals(CardInventoryStatus.Current, state.result.status)
+            assertEquals(1, harness.cardInventoryRepository.records.size)
+            assertEquals(
+                CardInventoryStatus.Current,
+                harness.cardInventoryRepository.records
+                    .single()
+                    .status,
+            )
+        }
+
+    @Test
+    fun startCardSetReissueMovesToWritingCards() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val harness = testHarness()
+            val viewModel = harness.viewModel
+            unlockCreatedVault(viewModel)
+
+            viewModel.startCardSetReissue()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value as CreateVaultUiState.WritingCards
+            assertEquals(0, state.writtenCount)
+            assertEquals(5, state.total)
+            assertEquals("请依次重写所有 CUID 卡。", state.message)
+            assertEquals(listOf(0), harness.core.encodedEntryCounts)
+        }
+
+    @Test
+    fun interruptedRecoveryKeepsReadingUntilAGroupReachesThreshold() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel = testViewModel()
+            viewModel.updatePassword("passphrase")
+            viewModel.startInterruptedReissueRecovery()
+
+            viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(21)))
+            advanceUntilIdle()
+            val first = viewModel.uiState.value as CreateVaultUiState.RecoveringInterruptedReissue
+            assertEquals(1, first.readCount)
+
+            viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(22)))
+            advanceUntilIdle()
+            val second = viewModel.uiState.value as CreateVaultUiState.RecoveringInterruptedReissue
+            assertEquals(2, second.readCount)
+
+            viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(23)))
+            advanceUntilIdle()
+
+            val unlocked = viewModel.uiState.value as CreateVaultUiState.Unlocked
+            assertEquals("01010101010101010101010101010101", unlocked.summary.vaultIdHex)
+            assertEquals(3, unlocked.summary.threshold)
+            assertEquals(5, unlocked.summary.total)
+        }
+
     private fun testViewModel(): CreateVaultViewModel = testHarness().viewModel
 
     private fun testHarness(vaultRepository: ViewModelFakeVaultRepository = ViewModelFakeVaultRepository()): ViewModelHarness {
         val core = ViewModelFakeMcvCore()
+        val cardInventoryRepository = ViewModelFakeCardInventoryRepository()
+        val inspectCardUseCase = InspectCardUseCase(core)
         val viewModel =
             CreateVaultViewModel(
                 createVaultUseCase =
@@ -238,6 +314,15 @@ class CreateVaultViewModelTest {
                         core = core,
                         vaultRepository = vaultRepository,
                     ),
+                inspectCardUseCase = inspectCardUseCase,
+                verifyCardSetUseCase =
+                    VerifyCardSetUseCase(
+                        inspectCardUseCase = inspectCardUseCase,
+                        cardInventoryRepository = cardInventoryRepository,
+                        clock = { 1234 },
+                    ),
+                startCardSetReissueUseCase = StartCardSetReissueUseCase(core),
+                recoverInterruptedReissueUseCase = RecoverInterruptedReissueUseCase(),
                 appSettingsRepository = ViewModelFakeAppSettingsRepository(),
                 workDispatcher = mainDispatcherRule.dispatcher,
                 entryIdGenerator = { "03030303030303030303030303030303" },
@@ -247,7 +332,20 @@ class CreateVaultViewModelTest {
             viewModel = viewModel,
             core = core,
             vaultRepository = vaultRepository,
+            cardInventoryRepository = cardInventoryRepository,
         )
+    }
+
+    private fun TestScope.unlockCreatedVault(viewModel: CreateVaultViewModel) {
+        viewModel.updatePassword("passphrase")
+        viewModel.createVault()
+        advanceUntilIdle()
+        writeAllCards(viewModel)
+        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(10)))
+        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(11)))
+        viewModel.onNfcResult(NfcCardResult.Success(byteArrayOf(12)))
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value is CreateVaultUiState.Unlocked)
     }
 
     private fun writeAllCards(viewModel: CreateVaultViewModel) {
@@ -297,6 +395,7 @@ private data class ViewModelHarness(
     val viewModel: CreateVaultViewModel,
     val core: ViewModelFakeMcvCore,
     val vaultRepository: ViewModelFakeVaultRepository,
+    val cardInventoryRepository: ViewModelFakeCardInventoryRepository,
 )
 
 private class ViewModelFakeMcvCore : McvCore {
@@ -348,21 +447,54 @@ private class ViewModelFakeMcvCore : McvCore {
         cardPayloads: List<ByteArray>,
         newPlaintext: ByteArray,
     ): RustUpdateVaultResult {
-        require(newPlaintext.contentEquals(byteArrayOf(1)))
+        require(newPlaintext.contentEquals(byteArrayOf(0)) || newPlaintext.contentEquals(byteArrayOf(1)))
         return RustUpdateVaultResult(List(5) { index -> byteArrayOf((50 + index).toByte()) })
     }
 
-    override fun inspectCardPayload(cardPayload: ByteArray): RustCardPayloadInspection =
-        RustCardPayloadInspection(
+    override fun inspectCardPayload(cardPayload: ByteArray): RustCardPayloadInspection {
+        val first = cardPayload.firstOrNull()?.toInt() ?: error("empty card payload")
+        val shareIndex =
+            when (first) {
+                in 10..14 -> first - 9
+                in 21..25 -> first - 20
+                else -> 1
+            }
+        return RustCardPayloadInspection(
             vaultId = ByteArray(16) { 1 },
             schemeId = ByteArray(16) { 2 },
             threshold = 3,
             total = 5,
-            shareIndex = 1,
+            shareIndex = shareIndex,
             kdfId = 1,
             aeadId = 1,
             formatVersion = 1,
         )
+    }
+}
+
+private class ViewModelFakeCardInventoryRepository : CardInventoryRepository {
+    val records = mutableListOf<CardInventoryRecord>()
+
+    override suspend fun upsert(record: CardInventoryRecord) {
+        records.removeAll {
+            it.vaultIdHex == record.vaultIdHex &&
+                it.schemeIdHex == record.schemeIdHex &&
+                it.shareIndex == record.shareIndex
+        }
+        records += record
+    }
+
+    override suspend fun listForVault(vaultIdHex: String): List<CardInventoryRecord> = records.filter { it.vaultIdHex == vaultIdHex }
+
+    override suspend fun listForCardSet(
+        vaultIdHex: String,
+        schemeIdHex: String,
+    ): List<CardInventoryRecord> = records.filter { it.vaultIdHex == vaultIdHex && it.schemeIdHex == schemeIdHex }
+
+    override suspend fun markCurrentCardSet(
+        vaultIdHex: String,
+        currentSchemeIdHex: String,
+    ) = Unit
 }
 
 private class ViewModelFakeVaultRepository : VaultRepository {

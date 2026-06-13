@@ -33,7 +33,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import app.multicardvault.core.RustMcvCore
 import app.multicardvault.data.McvDatabase
+import app.multicardvault.data.RoomCardInventoryRepository
 import app.multicardvault.data.RoomVaultRepository
+import app.multicardvault.features.cards.InspectCardUseCase
+import app.multicardvault.features.cards.RecoverInterruptedReissueUseCase
+import app.multicardvault.features.cards.StartCardSetReissueUseCase
+import app.multicardvault.features.cards.VerifyCardSetUseCase
 import app.multicardvault.features.create.CreateVaultFormState
 import app.multicardvault.features.create.CreateVaultUiState
 import app.multicardvault.features.create.CreateVaultUseCase
@@ -81,6 +86,8 @@ class MainActivity : ComponentActivity() {
         val dao = database.vaultDao()
         val core = RustMcvCore()
         val vaultRepository = RoomVaultRepository(dao)
+        val cardInventoryRepository = RoomCardInventoryRepository(database.cardInventoryDao())
+        val inspectCardUseCase = InspectCardUseCase(core)
         val factory =
             CreateVaultViewModel.Factory(
                 createVaultUseCase =
@@ -102,6 +109,14 @@ class MainActivity : ComponentActivity() {
                         core = core,
                         vaultRepository = vaultRepository,
                     ),
+                inspectCardUseCase = inspectCardUseCase,
+                verifyCardSetUseCase =
+                    VerifyCardSetUseCase(
+                        inspectCardUseCase = inspectCardUseCase,
+                        cardInventoryRepository = cardInventoryRepository,
+                    ),
+                startCardSetReissueUseCase = StartCardSetReissueUseCase(core),
+                recoverInterruptedReissueUseCase = RecoverInterruptedReissueUseCase(),
                 appSettingsRepository = appSettingsRepository,
             )
         ViewModelProvider(this, factory)[CreateVaultViewModel::class.java]
@@ -200,6 +215,7 @@ fun MultiCardVaultApp(
                     uiState = uiState,
                     onUnlockClick = viewModel::startUnlockSavedVault,
                     onRecoverClick = viewModel::startRecoverFromCards,
+                    onRecoverInterruptedClick = viewModel::startInterruptedReissueRecovery,
                 )
                 CreateVaultStatus(
                     uiState = uiState,
@@ -209,6 +225,8 @@ fun MultiCardVaultApp(
                     onEditEntry = viewModel::editEntry,
                     onDeleteEntry = viewModel::deleteEntry,
                     onCancelEntryEdit = viewModel::cancelEntryEdit,
+                    onVerifyCard = viewModel::startVerifyCurrentCard,
+                    onReissueCards = viewModel::startCardSetReissue,
                 )
                 SettingsDiagnosticsCard(
                     settings = settings,
@@ -299,6 +317,7 @@ private fun SavedVaultList(
     uiState: CreateVaultUiState,
     onUnlockClick: (SavedVaultSummary) -> Unit,
     onRecoverClick: () -> Unit,
+    onRecoverInterruptedClick: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -311,6 +330,12 @@ private fun SavedVaultList(
                 enabled = password.isNotEmpty() && canStartSavedVaultUnlock(uiState),
             ) {
                 Text("从 CUID 卡恢复")
+            }
+            Button(
+                onClick = onRecoverInterruptedClick,
+                enabled = password.isNotEmpty() && canStartSavedVaultUnlock(uiState),
+            ) {
+                Text("恢复中断重发")
             }
             if (vaults.isEmpty()) {
                 Text("本机暂无已保存的 Vault。可直接用主密码和足够数量的 CUID 卡恢复。")
@@ -342,10 +367,13 @@ private fun canStartSavedVaultUnlock(uiState: CreateVaultUiState): Boolean =
     when (uiState) {
         CreateVaultUiState.Editing -> true
         is CreateVaultUiState.Failed -> true
+        is CreateVaultUiState.CardVerified -> true
         is CreateVaultUiState.Unlocked -> true
         CreateVaultUiState.Creating,
         is CreateVaultUiState.ReadingCards,
+        is CreateVaultUiState.RecoveringInterruptedReissue,
         is CreateVaultUiState.Unlocking,
+        is CreateVaultUiState.VerifyingCard,
         is CreateVaultUiState.WritingCards,
         -> false
     }
@@ -427,6 +455,8 @@ private fun CreateVaultStatus(
     onEditEntry: (String) -> Unit,
     onDeleteEntry: (String) -> Unit,
     onCancelEntryEdit: () -> Unit,
+    onVerifyCard: () -> Unit,
+    onReissueCards: () -> Unit,
 ) {
     when (uiState) {
         CreateVaultUiState.Editing -> Box(modifier = Modifier.fillMaxWidth())
@@ -481,6 +511,47 @@ private fun CreateVaultStatus(
                 }
             }
 
+        is CreateVaultUiState.VerifyingCard ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("校验卡片", style = MaterialTheme.typography.titleMedium)
+                    Text("Vault ID：${uiState.summary.vaultIdHex.take(16)}...")
+                    Text(uiState.message)
+                }
+            }
+
+        is CreateVaultUiState.CardVerified ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("卡片校验结果", style = MaterialTheme.typography.titleMedium)
+                    Text(uiState.result.message)
+                    Text("状态：${uiState.result.status.name}")
+                    uiState.result.inspection?.let { inspection ->
+                        Text("Vault ID：${inspection.vaultIdHex.take(16)}...")
+                        Text("卡组：${inspection.schemeIdHex.take(16)}...")
+                        Text("序号：${inspection.shareIndex} / ${inspection.total}")
+                    }
+                }
+            }
+
+        is CreateVaultUiState.RecoveringInterruptedReissue ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("恢复中断重发", style = MaterialTheme.typography.titleMedium)
+                    Text("读取进度：${uiState.readCount} / ${uiState.threshold}")
+                    Text(uiState.message)
+                }
+            }
+
         is CreateVaultUiState.Unlocked ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -491,6 +562,20 @@ private fun CreateVaultStatus(
                     Text("Vault ID：${uiState.unlocked.vaultIdHex.take(16)}...")
                     Text("明文结构大小：${uiState.unlocked.plaintextSize} 字节")
                     Text("条目数量：${uiState.unlocked.entries.size}")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = onVerifyCard,
+                            enabled = !uiState.isSaving,
+                        ) {
+                            Text("校验卡片")
+                        }
+                        Button(
+                            onClick = onReissueCards,
+                            enabled = !uiState.isSaving,
+                        ) {
+                            Text("重发整套卡")
+                        }
+                    }
                     if (uiState.unlocked.entries.isEmpty()) {
                         Text("当前 Vault 为空。")
                     }
