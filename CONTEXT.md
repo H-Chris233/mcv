@@ -24,6 +24,22 @@ _Avoid_: NFC dump, access card data
 承载一个 **Card Payload** 的 MIFARE Classic 1K 兼容 CUID 卡。
 _Avoid_: access card, cloned card
 
+**Card Set**:
+属于同一个 **Vault** 和 **Scheme ID**、共同满足一个 **Threshold/Total** 配置的一组 **Card**。
+_Avoid_: card batch, backup set
+
+**Card Inventory**:
+设备本地记录的 **Card** 编号、昵称、状态和最近校验结果；不参与恢复 **Vault**。
+_Avoid_: card secret store, card backup
+
+**Card Set Reissue**:
+在已满足恢复条件后，为同一个 **Vault** 生成并写入一整套新的 **Card Set**，使旧 **Card Set** 不再代表当前状态。
+_Avoid_: single-card patch, card clone
+
+**Interrupted Reissue Recovery**:
+当 **Card Set Reissue** 未完成时，通过重新扫描 **Card** 并找到任一达到 **Threshold** 的 **Card Set** 来恢复继续操作。
+_Avoid_: cached card payload resume, local backup restore
+
 **Data Fragment**:
 由 **Vault Blob** 派生、随 **Card Payload** 存放的部分 Vault 数据。
 _Avoid_: share, backup chunk
@@ -39,6 +55,10 @@ _Avoid_: scan count
 **Total**:
 同一组门限方案中生成的 **Share** 总数量。
 _Avoid_: card capacity
+
+**Safe Threshold Preset**:
+经过产品允许的 **Threshold/Total** 组合，用于降低 **Card Set Reissue** 中断后不可恢复的风险。
+_Avoid_: custom threshold, advanced threshold
 
 **Scheme ID**:
 标识同一批门限分片方案的唯一 ID。
@@ -68,12 +88,18 @@ _Avoid_: backup import, card unlock
 - 一个 **Vault Blob** 可拆分为多个 **Data Fragment**。
 - 一个 **Scheme ID** 对应一批 **Share**。
 - 一个 **Card** 承载一个 **Card Payload**。
+- 一个 **Card Set** 包含 **Total** 张 **Card**。
+- 一个 **Card Set** 内的所有 **Card** 共享同一个 **Vault ID** 和 **Scheme ID**。
+- **Card Inventory** 是本地非恢复元数据，丢失后可通过重新扫描 **Card Set** 重建。
+- **Interrupted Reissue Recovery** 不依赖本机持久化完整 **Card Payload**。
 - 一个 **Card Payload** 承载一个加密后的 **Share** 和一个 **Data Fragment**。
 - 一个 **Vault** 的解锁需要至少 **Threshold** 个不同 **Share**。
 - 一个 **Vault** 的恢复需要至少 **Threshold** 个不同 **Data Fragment**。
 - **Threshold** 必须小于或等于 **Total**。
+- 用户可选的门限配置必须来自 **Safe Threshold Preset**。
 - **Final Key** 依赖足够数量的 **Share** 和一个 **User Password**。
 - **Cross-Device Recovery** 不是普通 **Vault Blob** 导入；它需要额外恢复模型。
+- **Card Set Reissue** 替换整个 **Card Set**，不承诺单独修补某一张 **Card**。
 
 ## Example Dialogue
 
