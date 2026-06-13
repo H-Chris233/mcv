@@ -18,11 +18,12 @@ Card Payload v1 is fixed-order CBOR array data. It stores:
   kdf_params,
   card_salt: bstr(16),
   card_nonce: bstr(24),
-  encrypted_share: bstr
+  encrypted_share: bstr,
+  data_fragment: bstr
 ]
 ```
 
-The authenticated card header is the same array without `encrypted_share`. The encrypted share plaintext is the serialized GF(256) Shamir share from the `blahaj` crate, whose first byte is the share index.
+The authenticated card header is the same array without `encrypted_share`. The encrypted share plaintext is the serialized GF(256) Shamir share from the `blahaj` crate, whose first byte is the share index. The `data_fragment` field is a serialized GF(256) Shamir share of the encoded Vault Blob bytes and is carried on the same card as the key Share.
 
 ## Validation
 
@@ -36,8 +37,9 @@ The authenticated card header is the same array without `encrypted_share`. The e
 - `card_salt` must be 16 bytes.
 - `card_nonce` must be 24 bytes.
 - `encrypted_share` must decrypt with the Card Payload header as AAD.
+- `data_fragment` values from any threshold-sized card set must reconstruct the encoded Vault Blob.
 - Repeated `share_index` values must not count twice.
 
 ## Capacity
 
-The MVP targets NTAG216-compatible NDEF tags. Payload size should remain below the default budget tested by Rust core tests.
+The CUID-card storage protocol targets MIFARE Classic 1K compatible cards. Payload size must fit the available authenticated data blocks after card framing and sector trailer blocks are excluded.

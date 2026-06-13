@@ -11,8 +11,8 @@ It demonstrates a 3-of-5 NFC card threshold unlock flow backed by Rust cryptogra
 
 - Rust protocol core for Vault creation, unlock, update, CardPayload encoding, VaultBlob encoding, and VaultPlaintext encoding.
 - Shamir Secret Sharing over GF(256), Argon2id, HKDF-SHA256, and XChaCha20-Poly1305.
-- Kotlin/Compose Android app with Room persistence and Android Keystore Device Secret wrapping.
-- NDEF NFC read/write support for MVP tags such as NTAG216.
+- Kotlin/Compose Android app with Room metadata persistence.
+- MIFARE Classic 1K compatible CUID Card read/write support.
 - Saved Vault list and app-restart unlock for completed Vault records.
 - Simple text Vault entries with add, edit, and delete support.
 - Test vectors under `test-vectors/`.
@@ -21,12 +21,11 @@ It demonstrates a 3-of-5 NFC card threshold unlock flow backed by Rust cryptogra
 ## Not Included
 
 - Independent security audit.
-- Cross-device recovery.
+- Recovery from fewer than threshold cards.
 - Cloud sync or accounts.
-- Biometric-gated Device Secret access.
 - Card replacement flow.
 - Encrypted backup import/export.
-- MIFARE Classic, CUID, DESFire, or JavaCard support.
+- DESFire, JavaCard, or NDEF-only tag support.
 
 ## Verification Before Release
 
@@ -45,7 +44,7 @@ cargo deny check advisories bans sources
 ./gradlew -p android assembleDebug
 ```
 
-Then complete `docs/manual-nfc-test-record.md` with real NTAG216 tags.
+Then complete `docs/manual-nfc-test-record.md` with real CUID Cards.
 
 ## Warning
 

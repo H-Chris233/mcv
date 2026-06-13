@@ -8,9 +8,8 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [
         VaultEntity::class,
-        DeviceSecretEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class McvDatabase : RoomDatabase() {
@@ -23,6 +22,7 @@ abstract class McvDatabase : RoomDatabase() {
                     context.applicationContext,
                     McvDatabase::class.java,
                     "mcv.db",
-                ).build()
+                ).fallbackToDestructiveMigration()
+                .build()
     }
 }

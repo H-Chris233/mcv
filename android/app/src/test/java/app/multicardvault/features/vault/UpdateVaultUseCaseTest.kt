@@ -7,25 +7,21 @@ import app.multicardvault.core.RustUpdateVaultResult
 import app.multicardvault.core.RustVaultPlaintext
 import app.multicardvault.data.VaultRecord
 import app.multicardvault.data.VaultRepository
-import app.multicardvault.security.DeviceSecretRepository
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UpdateVaultUseCaseTest {
     @Test
-    fun updateVaultReencryptsPlaintextAndStoresNewBlob() =
+    fun updateVaultReturnsReplacementCardPayloadsAndTouchesMetadata() =
         runTest {
             val core = UpdateFakeMcvCore()
             val vaultRepository = UpdateFakeVaultRepository()
-            val deviceSecretRepository = UpdateFakeDeviceSecretRepository()
             val useCase =
                 UpdateVaultUseCase(
                     core = core,
                     vaultRepository = vaultRepository,
-                    deviceSecretRepository = deviceSecretRepository,
                 )
 
             val result =
@@ -47,24 +43,22 @@ class UpdateVaultUseCaseTest {
                 )
 
             assertEquals(1, result.plaintextSize)
-            assertArrayEquals(byteArrayOf(8, 8), vaultRepository.record.vaultBlob)
+            assertEquals(listOf(byteArrayOf(8), byteArrayOf(9)).map { it.toList() }, result.cardPayloads.map { it.toList() })
             assertEquals(99, vaultRepository.record.updatedAt)
             assertEquals(1, core.encodedEntryCount)
-            assertArrayEquals(byteArrayOf(1), core.receivedNewPlaintext)
+            assertEquals(byteArrayOf(1).toList(), core.receivedNewPlaintext.toList())
             assertEquals(2, core.receivedCardPayloadCount)
         }
 
     @Test
-    fun updateVaultClearsDeviceSecretWhenPlaintextEncodeFails() =
+    fun updateVaultReturnsFailureWhenPlaintextEncodeFails() =
         runTest {
             val core = UpdateFakeMcvCore(failEncode = true)
             val vaultRepository = UpdateFakeVaultRepository()
-            val deviceSecretRepository = UpdateFakeDeviceSecretRepository()
             val useCase =
                 UpdateVaultUseCase(
                     core = core,
                     vaultRepository = vaultRepository,
-                    deviceSecretRepository = deviceSecretRepository,
                 )
 
             val result =
@@ -87,7 +81,6 @@ class UpdateVaultUseCaseTest {
                 }
 
             assertTrue(result.isFailure)
-            assertTrue(deviceSecretRepository.secret.all { it == 0.toByte() })
         }
 }
 
@@ -118,27 +111,22 @@ private class UpdateFakeMcvCore(
         password: String,
         threshold: Int,
         total: Int,
-        deviceSecret: ByteArray,
         initialPlaintext: ByteArray,
     ): RustCreateVaultResult = error("not used")
 
     override fun unlockVault(
         password: String,
-        deviceSecret: ByteArray,
-        vaultBlob: ByteArray,
         cardPayloads: List<ByteArray>,
     ): RustUnlockVaultResult = error("not used")
 
     override fun updateVault(
         password: String,
-        deviceSecret: ByteArray,
-        vaultBlob: ByteArray,
         cardPayloads: List<ByteArray>,
         newPlaintext: ByteArray,
     ): RustUpdateVaultResult {
         receivedNewPlaintext = newPlaintext.copyOf()
         receivedCardPayloadCount = cardPayloads.size
-        return RustUpdateVaultResult(newVaultBlob = byteArrayOf(8, 8))
+        return RustUpdateVaultResult(cardPayloads = listOf(byteArrayOf(8), byteArrayOf(9)))
     }
 }
 
@@ -151,7 +139,6 @@ private class UpdateFakeVaultRepository : VaultRepository {
             threshold = 2,
             total = 3,
             schemeId = ByteArray(16) { 2 },
-            vaultBlob = byteArrayOf(7, 7),
             createdAt = 1,
             updatedAt = 1,
         )
@@ -164,13 +151,12 @@ private class UpdateFakeVaultRepository : VaultRepository {
 
     override suspend fun listVaults(): List<VaultRecord> = listOf(record)
 
-    override suspend fun updateVaultBlob(
+    override suspend fun touchVault(
         id: String,
-        vaultBlob: ByteArray,
         updatedAt: Long,
     ) {
         check(id == record.id)
-        record = record.copy(vaultBlob = vaultBlob.copyOf(), updatedAt = updatedAt)
+        record = record.copy(updatedAt = updatedAt)
     }
 
     override suspend fun deleteVault(id: String) {
@@ -178,19 +164,4 @@ private class UpdateFakeVaultRepository : VaultRepository {
             record = record.copy(id = "deleted")
         }
     }
-}
-
-private class UpdateFakeDeviceSecretRepository : DeviceSecretRepository {
-    val secret = ByteArray(32) { 7 }
-
-    override fun generateDeviceSecret(): ByteArray = byteArrayOf(9)
-
-    override suspend fun saveDeviceSecret(
-        vaultId: ByteArray,
-        deviceSecret: ByteArray,
-    ) = Unit
-
-    override suspend fun getDeviceSecret(vaultId: ByteArray): ByteArray = secret
-
-    override suspend fun deleteDeviceSecret(vaultId: ByteArray) = Unit
 }

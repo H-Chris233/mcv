@@ -202,6 +202,8 @@ pub struct CardPayloadV1 {
     pub card_nonce: Vec<u8>,
     /// AEAD ciphertext containing the serialized Shamir share.
     pub encrypted_share: Vec<u8>,
+    /// Serialized Shamir data fragment for reconstructing the encoded Vault Blob.
+    pub data_fragment: Vec<u8>,
 }
 
 impl CardPayloadV1 {
@@ -237,6 +239,7 @@ impl CardPayloadV1 {
             self.card_salt.clone(),
             self.card_nonce.clone(),
             self.encrypted_share.clone(),
+            self.data_fragment.clone(),
         ))
     }
 
@@ -262,6 +265,7 @@ impl CardPayloadV1 {
             card_salt: wire.10,
             card_nonce: wire.11,
             encrypted_share: wire.12,
+            data_fragment: wire.13,
         };
         payload.validate()?;
         Ok(payload)
@@ -283,6 +287,7 @@ impl CardPayloadV1 {
             self.kdf_params,
             self.card_salt.clone(),
             self.card_nonce.clone(),
+            self.data_fragment.clone(),
         ))
     }
 }
@@ -499,6 +504,7 @@ struct CardPayloadWire(
     #[serde(with = "serde_bytes")] Vec<u8>,
     #[serde(with = "serde_bytes")] Vec<u8>,
     #[serde(with = "serde_bytes")] Vec<u8>,
+    #[serde(with = "serde_bytes")] Vec<u8>,
 );
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -513,6 +519,7 @@ struct CardHeaderWire(
     u8,
     u8,
     KdfParams,
+    #[serde(with = "serde_bytes")] Vec<u8>,
     #[serde(with = "serde_bytes")] Vec<u8>,
     #[serde(with = "serde_bytes")] Vec<u8>,
 );
@@ -631,6 +638,7 @@ mod tests {
             card_salt: vec![3; SALT_LEN],
             card_nonce: vec![4; XCHACHA20_NONCE_LEN],
             encrypted_share: vec![5; 48],
+            data_fragment: vec![1, 6, 7, 8],
         };
 
         let encoded = payload.encode()?;

@@ -94,19 +94,15 @@ pub fn derive_password_key(
     Ok(output)
 }
 
-/// Derives the final vault key from card, password, and device factors.
+/// Derives the final vault key from card and password factors.
 pub fn derive_final_key(
     master_secret: &[u8],
     password_key: &[u8],
-    device_secret: &[u8],
     salt: &[u8],
 ) -> Result<Zeroizing<[u8; SECRET_LEN]>, CryptoError> {
-    let mut ikm = Zeroizing::new(Vec::with_capacity(
-        master_secret.len() + password_key.len() + device_secret.len(),
-    ));
+    let mut ikm = Zeroizing::new(Vec::with_capacity(master_secret.len() + password_key.len()));
     ikm.extend_from_slice(master_secret);
     ikm.extend_from_slice(password_key);
-    ikm.extend_from_slice(device_secret);
 
     let hk = Hkdf::<Sha256>::new(Some(salt), ikm.as_slice());
     let mut output = Zeroizing::new([0_u8; SECRET_LEN]);
@@ -207,12 +203,7 @@ mod tests {
     fn kdf_and_hkdf_are_deterministic_for_same_inputs() -> Result<(), CryptoError> {
         let first = derive_password_key("correct horse", &[1_u8; SALT_LEN], KdfParams::TEST)?;
         let second = derive_password_key("correct horse", &[1_u8; SALT_LEN], KdfParams::TEST)?;
-        let final_key = derive_final_key(
-            &[2_u8; SECRET_LEN],
-            first.as_slice(),
-            &[3_u8; SECRET_LEN],
-            &[4_u8; SALT_LEN],
-        )?;
+        let final_key = derive_final_key(&[2_u8; SECRET_LEN], first.as_slice(), &[4_u8; SALT_LEN])?;
 
         assert_eq!(first.as_slice(), second.as_slice());
         assert_eq!(final_key.len(), SECRET_LEN);

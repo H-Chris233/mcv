@@ -24,7 +24,7 @@ Vault Blob v1 is fixed-order CBOR array data. It stores:
 ]
 ```
 
-`scheme_id` is included so `unlock_vault` can validate cards using only the vault blob and card payloads. The authenticated vault header is the same array without `ciphertext`.
+`scheme_id` is included so `unlock_vault` can validate recovered Vault Blob bytes against scanned card payloads. The authenticated vault header is the same array without `ciphertext`.
 
 Vault Plaintext v1 is fixed-order CBOR:
 
@@ -55,4 +55,4 @@ Vault Plaintext v1 is fixed-order CBOR:
 
 ## Storage
 
-Android stores the encoded Vault Blob in Room. Room must not store Vault Plaintext, user passwords, unencrypted shares, `master_secret`, `password_key`, `final_key`, or raw `device_secret`.
+Android does not store the encoded Vault Blob in Room. The encoded Vault Blob is split into Card Payload Data Fragments and recovered from any threshold-sized card set. Room must not store Vault Blob bytes, Vault Plaintext, user passwords, unencrypted Shares, Data Fragments, `master_secret`, `password_key`, or `final_key`.

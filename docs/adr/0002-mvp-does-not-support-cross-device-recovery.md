@@ -1,5 +1,7 @@
 # MVP Does Not Support Cross-Device Recovery
 
+Status: superseded by ADR-0003
+
 The MVP requires enough valid cards, the user password, and the current device secret to derive the final vault decryption capability. Because the device secret participates in the final key and is not exported, importing a vault blob on another device is not a supported recovery path in the MVP.
 
 ## Considered Options

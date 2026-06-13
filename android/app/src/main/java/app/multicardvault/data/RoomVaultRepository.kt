@@ -7,9 +7,8 @@ interface VaultRepository {
 
     suspend fun listVaults(): List<VaultRecord>
 
-    suspend fun updateVaultBlob(
+    suspend fun touchVault(
         id: String,
-        vaultBlob: ByteArray,
         updatedAt: Long,
     )
 
@@ -27,12 +26,11 @@ class RoomVaultRepository(
 
     override suspend fun listVaults(): List<VaultRecord> = dao.listVaults().map { it.toRecord() }
 
-    override suspend fun updateVaultBlob(
+    override suspend fun touchVault(
         id: String,
-        vaultBlob: ByteArray,
         updatedAt: Long,
     ) {
-        check(dao.updateVaultBlob(id, vaultBlob, updatedAt) == 1) { "vault not found" }
+        check(dao.touchVault(id, updatedAt) == 1) { "vault not found" }
     }
 
     override suspend fun deleteVault(id: String) {

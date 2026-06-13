@@ -15,45 +15,43 @@ class RustMcvCoreTest {
     }
 
     @Test
-    fun createVaultThroughUniffiReturnsVaultBlobAndCardPayloads() {
+    fun createVaultThroughUniffiReturnsCardPayloads() {
         val result =
             core.createVault(
                 password = "correct horse battery staple",
                 threshold = 2,
                 total = 3,
-                deviceSecret = ByteArray(32) { 7 },
                 initialPlaintext = core.emptyVaultPlaintext(),
             )
 
         assertEquals(16, result.vaultId.size)
         assertEquals(16, result.schemeId.size)
         assertEquals(3, result.cardPayloads.size)
-        assertTrue(result.vaultBlob.isNotEmpty())
         assertTrue(result.cardPayloads.all { it.isNotEmpty() })
     }
 
     @Test
-    fun unlockVaultThroughUniffiReturnsPlaintext() {
+    fun unlockVaultThroughUniffiReturnsPlaintextAndRecoveredMetadata() {
         val password = "correct horse battery staple"
-        val deviceSecret = ByteArray(32) { 7 }
         val created =
             core.createVault(
                 password = password,
                 threshold = 2,
                 total = 3,
-                deviceSecret = deviceSecret,
                 initialPlaintext = core.emptyVaultPlaintext(),
             )
 
         val unlocked =
             core.unlockVault(
                 password = password,
-                deviceSecret = deviceSecret,
-                vaultBlob = created.vaultBlob,
                 cardPayloads = created.cardPayloads.take(2),
             )
 
         assertTrue(unlocked.plaintext.isNotEmpty())
+        assertEquals(created.vaultId.toList(), unlocked.vaultId.toList())
+        assertEquals(created.schemeId.toList(), unlocked.schemeId.toList())
+        assertEquals(2, unlocked.threshold)
+        assertEquals(3, unlocked.total)
     }
 
     @Test
@@ -80,15 +78,13 @@ class RustMcvCoreTest {
     }
 
     @Test
-    fun updateVaultThroughUniffiReturnsReplacementBlob() {
+    fun updateVaultThroughUniffiReturnsReplacementCards() {
         val password = "correct horse battery staple"
-        val deviceSecret = ByteArray(32) { 7 }
         val created =
             core.createVault(
                 password = password,
                 threshold = 2,
                 total = 3,
-                deviceSecret = deviceSecret,
                 initialPlaintext = core.emptyVaultPlaintext(),
             )
         val nextPlaintext =
@@ -110,21 +106,18 @@ class RustMcvCoreTest {
         val updated =
             core.updateVault(
                 password = password,
-                deviceSecret = deviceSecret,
-                vaultBlob = created.vaultBlob,
                 cardPayloads = created.cardPayloads.take(2),
                 newPlaintext = nextPlaintext,
             )
         val unlocked =
             core.unlockVault(
                 password = password,
-                deviceSecret = deviceSecret,
-                vaultBlob = updated.newVaultBlob,
-                cardPayloads = created.cardPayloads.take(2),
+                cardPayloads = updated.cardPayloads.take(2),
             )
 
         val decoded = core.decodeVaultPlaintext(unlocked.plaintext)
         assertEquals("Updated", decoded.entries.single().title)
-        assertTrue(updated.newVaultBlob.isNotEmpty())
+        assertEquals(3, updated.cardPayloads.size)
+        assertTrue(updated.cardPayloads.all { it.isNotEmpty() })
     }
 }

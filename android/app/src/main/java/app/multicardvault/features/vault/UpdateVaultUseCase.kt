@@ -5,16 +5,15 @@ import app.multicardvault.core.RustVaultEntry
 import app.multicardvault.core.RustVaultPlaintext
 import app.multicardvault.core.hexToByteArray
 import app.multicardvault.data.VaultRepository
-import app.multicardvault.security.DeviceSecretRepository
 
 data class UpdatedVaultSummary(
     val plaintextSize: Int,
+    val cardPayloads: List<ByteArray>,
 )
 
 class UpdateVaultUseCase(
     private val core: McvCore,
     private val vaultRepository: VaultRepository,
-    private val deviceSecretRepository: DeviceSecretRepository,
 ) {
     suspend operator fun invoke(
         vaultIdHex: String,
@@ -28,9 +27,6 @@ class UpdateVaultUseCase(
         val vault = vaultRepository.getVault(vaultIdHex) ?: error("vault not found")
         require(cardPayloads.size >= vault.threshold) { "not enough card payloads" }
 
-        val deviceSecret =
-            deviceSecretRepository.getDeviceSecret(vault.vaultId)
-                ?: error("device secret not found")
         var plaintext: ByteArray? = null
         try {
             val encodedPlaintext =
@@ -52,16 +48,16 @@ class UpdateVaultUseCase(
             val updated =
                 core.updateVault(
                     password = password,
-                    deviceSecret = deviceSecret,
-                    vaultBlob = vault.vaultBlob,
                     cardPayloads = cardPayloads,
                     newPlaintext = encodedPlaintext,
                 )
-            vaultRepository.updateVaultBlob(vaultIdHex, updated.newVaultBlob, updatedAt)
-            return UpdatedVaultSummary(plaintextSize = encodedPlaintext.size)
+            vaultRepository.touchVault(vaultIdHex, updatedAt)
+            return UpdatedVaultSummary(
+                plaintextSize = encodedPlaintext.size,
+                cardPayloads = updated.cardPayloads,
+            )
         } finally {
             plaintext?.fill(0)
-            deviceSecret.fill(0)
         }
     }
 }
