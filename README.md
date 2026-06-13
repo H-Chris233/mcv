@@ -8,7 +8,7 @@
 > 请勿将其作为不可替代敏感数据的唯一存储方案。
 > 本项目不用于复制门禁卡、绕过门禁系统，或读取未授权的第三方卡片。
 
-Multi-Card Vault (MCV) is an Android-only, local-first encrypted vault experiment. It uses multiple NFC cards as threshold key-share containers, combined with a user password and an Android device secret.
+Multi-Card Vault (MCV) is an Android-only, local-first encrypted vault experiment. It stores recoverable Vault data on multiple MIFARE Classic 1K compatible CUID Cards and unlocks with a user password plus any threshold-sized card set.
 
 ## Current Status
 
@@ -16,10 +16,10 @@ This repository currently contains:
 
 - Rust multi-crate workspace.
 - Rust protocol core for create/unlock/update flows.
-- Android Compose app with Rust UniFFI integration, Room persistence, DataStore settings, Android Keystore device-secret wrapping, NFC NDEF write/read/unlock, saved Vault unlock, diagnostics, and a minimal vault entry editor.
+- Android Compose app with Rust UniFFI integration, Room metadata persistence, DataStore settings, MIFARE Classic 1K CUID card write/read/unlock/recovery, saved Vault metadata list, diagnostics, and a minimal vault entry editor.
 - Protocol documentation, threat model, ADRs, test vectors, and CI workflows.
 
-The v0.1 MVP can write generated encrypted Card Payloads to NDEF tags, read threshold tags back, unlock the just-created Vault, display Vault Plaintext entries, add/edit/delete simple text entries through Rust `update_vault`, unlock previously saved Vaults after app restart from the local Vault list, persist lightweight settings in DataStore, and produce release artifacts through CI. It does not implement full multi-vault navigation or app-restart recovery for an interrupted write-card flow yet.
+The v0.1 MVP can write generated encrypted Card Payloads to CUID Cards, read threshold cards back, recover the Vault Blob from card Data Fragments, unlock the Vault with or without pre-existing local metadata, display Vault Plaintext entries, add/edit/delete simple text entries through Rust `update_vault`, rewrite all cards after an update, keep non-recovery Vault metadata in Room, persist lightweight settings in DataStore, and produce release artifacts through CI. It does not implement full multi-vault navigation or app-restart recovery for an interrupted write-card flow yet.
 
 ## Repository Layout
 

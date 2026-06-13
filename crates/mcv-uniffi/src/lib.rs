@@ -14,8 +14,6 @@ pub struct CreateVaultRequest {
     pub threshold: u8,
     /// Total cards to generate.
     pub total: u8,
-    /// Android device secret bytes.
-    pub device_secret: Vec<u8>,
     /// Encoded `VaultPlaintextV1`.
     pub initial_plaintext: Vec<u8>,
 }
@@ -27,8 +25,6 @@ pub struct CreateVaultResponse {
     pub vault_id: Vec<u8>,
     /// Scheme ID bytes.
     pub scheme_id: Vec<u8>,
-    /// Encoded `VaultBlobV1`.
-    pub vault_blob: Vec<u8>,
     /// Encoded `CardPayloadV1` values.
     pub card_payloads: Vec<Vec<u8>>,
 }
@@ -38,10 +34,6 @@ pub struct CreateVaultResponse {
 pub struct UnlockVaultRequest {
     /// User password.
     pub password: String,
-    /// Android device secret bytes.
-    pub device_secret: Vec<u8>,
-    /// Encoded `VaultBlobV1`.
-    pub vault_blob: Vec<u8>,
     /// Encoded `CardPayloadV1` values.
     pub card_payloads: Vec<Vec<u8>>,
 }
@@ -49,6 +41,14 @@ pub struct UnlockVaultRequest {
 /// UniFFI response for vault unlock.
 #[derive(Clone, Debug, Eq, PartialEq, uniffi::Record)]
 pub struct UnlockVaultResponse {
+    /// Vault ID bytes.
+    pub vault_id: Vec<u8>,
+    /// Scheme ID bytes.
+    pub scheme_id: Vec<u8>,
+    /// Shares required to recover.
+    pub threshold: u8,
+    /// Total cards in the recovered scheme.
+    pub total: u8,
     /// Encoded `VaultPlaintextV1`.
     pub plaintext: Vec<u8>,
 }
@@ -58,21 +58,17 @@ pub struct UnlockVaultResponse {
 pub struct UpdateVaultRequest {
     /// User password.
     pub password: String,
-    /// Android device secret bytes.
-    pub device_secret: Vec<u8>,
-    /// Encoded `VaultBlobV1`.
-    pub vault_blob: Vec<u8>,
     /// Encoded `CardPayloadV1` values.
     pub card_payloads: Vec<Vec<u8>>,
     /// Encoded replacement `VaultPlaintextV1`.
     pub new_plaintext: Vec<u8>,
 }
 
-/// UniFFI response for vault update.
+/// UniFFI response for vault card-set update.
 #[derive(Clone, Debug, Eq, PartialEq, uniffi::Record)]
 pub struct UpdateVaultResponse {
-    /// Encoded replacement `VaultBlobV1`.
-    pub new_vault_blob: Vec<u8>,
+    /// Encoded replacement `CardPayloadV1` values.
+    pub card_payloads: Vec<Vec<u8>>,
 }
 
 /// UniFFI-safe plaintext vault entry.
@@ -121,9 +117,6 @@ pub enum McvFfiError {
     /// Threshold or total is invalid.
     #[error("invalid threshold scheme")]
     InvalidThreshold,
-    /// Device secret is invalid.
-    #[error("invalid device secret")]
-    InvalidDeviceSecret,
     /// Card payload is malformed.
     #[error("invalid card payload")]
     InvalidCardPayload,
@@ -206,7 +199,6 @@ impl From<CreateVaultRequest> for mcv_core::CreateVaultRequest {
             password: value.password,
             threshold: value.threshold,
             total: value.total,
-            device_secret: value.device_secret,
             initial_plaintext: value.initial_plaintext,
         }
     }
@@ -217,7 +209,6 @@ impl From<mcv_core::CreateVaultResponse> for CreateVaultResponse {
         Self {
             vault_id: value.vault_id,
             scheme_id: value.scheme_id,
-            vault_blob: value.vault_blob,
             card_payloads: value.card_payloads,
         }
     }
@@ -227,8 +218,6 @@ impl From<UnlockVaultRequest> for mcv_core::UnlockVaultRequest {
     fn from(value: UnlockVaultRequest) -> Self {
         Self {
             password: value.password,
-            device_secret: value.device_secret,
-            vault_blob: value.vault_blob,
             card_payloads: value.card_payloads,
         }
     }
@@ -237,6 +226,10 @@ impl From<UnlockVaultRequest> for mcv_core::UnlockVaultRequest {
 impl From<mcv_core::UnlockVaultResponse> for UnlockVaultResponse {
     fn from(value: mcv_core::UnlockVaultResponse) -> Self {
         Self {
+            vault_id: value.vault_id,
+            scheme_id: value.scheme_id,
+            threshold: value.threshold,
+            total: value.total,
             plaintext: value.plaintext,
         }
     }
@@ -246,8 +239,6 @@ impl From<UpdateVaultRequest> for mcv_core::UpdateVaultRequest {
     fn from(value: UpdateVaultRequest) -> Self {
         Self {
             password: value.password,
-            device_secret: value.device_secret,
-            vault_blob: value.vault_blob,
             card_payloads: value.card_payloads,
             new_plaintext: value.new_plaintext,
         }
@@ -257,7 +248,7 @@ impl From<UpdateVaultRequest> for mcv_core::UpdateVaultRequest {
 impl From<mcv_core::UpdateVaultResponse> for UpdateVaultResponse {
     fn from(value: mcv_core::UpdateVaultResponse) -> Self {
         Self {
-            new_vault_blob: value.new_vault_blob,
+            card_payloads: value.card_payloads,
         }
     }
 }
@@ -316,7 +307,6 @@ impl From<mcv_core::McvError> for McvFfiError {
             mcv_core::McvError::DuplicateShareIndex => Self::DuplicateShareIndex,
             mcv_core::McvError::NotEnoughShares => Self::NotEnoughShares,
             mcv_core::McvError::InvalidThreshold => Self::InvalidThreshold,
-            mcv_core::McvError::InvalidDeviceSecret => Self::InvalidDeviceSecret,
             mcv_core::McvError::InvalidCardPayload => Self::InvalidCardPayload,
             mcv_core::McvError::InvalidVaultBlob => Self::InvalidVaultBlob,
             mcv_core::McvError::InvalidVaultPlaintext => Self::InvalidVaultPlaintext,

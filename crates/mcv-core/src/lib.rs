@@ -49,8 +49,6 @@ pub struct CreateVaultRequest {
     pub threshold: u8,
     /// Total card payloads to generate.
     pub total: u8,
-    /// Android device secret bytes.
-    pub device_secret: Vec<u8>,
     /// Encoded `VaultPlaintextV1`.
     pub initial_plaintext: Vec<u8>,
 }
@@ -62,8 +60,6 @@ pub struct CreateVaultResponse {
     pub vault_id: Vec<u8>,
     /// Scheme ID bytes.
     pub scheme_id: Vec<u8>,
-    /// Encoded `VaultBlobV1`.
-    pub vault_blob: Vec<u8>,
     /// Encoded `CardPayloadV1` values.
     pub card_payloads: Vec<Vec<u8>>,
 }
@@ -73,10 +69,6 @@ pub struct CreateVaultResponse {
 pub struct UnlockVaultRequest {
     /// User password.
     pub password: String,
-    /// Android device secret bytes.
-    pub device_secret: Vec<u8>,
-    /// Encoded `VaultBlobV1`.
-    pub vault_blob: Vec<u8>,
     /// Encoded `CardPayloadV1` values.
     pub card_payloads: Vec<Vec<u8>>,
 }
@@ -84,6 +76,14 @@ pub struct UnlockVaultRequest {
 /// Decrypted vault plaintext.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnlockVaultResponse {
+    /// Vault ID bytes recovered from card Data Fragments.
+    pub vault_id: Vec<u8>,
+    /// Scheme ID bytes recovered from card Data Fragments.
+    pub scheme_id: Vec<u8>,
+    /// Shares required to recover.
+    pub threshold: u8,
+    /// Total card payloads in the recovered scheme.
+    pub total: u8,
     /// Encoded `VaultPlaintextV1`.
     pub plaintext: Vec<u8>,
 }
@@ -93,21 +93,17 @@ pub struct UnlockVaultResponse {
 pub struct UpdateVaultRequest {
     /// User password.
     pub password: String,
-    /// Android device secret bytes.
-    pub device_secret: Vec<u8>,
-    /// Encoded `VaultBlobV1`.
-    pub vault_blob: Vec<u8>,
     /// Encoded `CardPayloadV1` values.
     pub card_payloads: Vec<Vec<u8>>,
     /// Encoded replacement `VaultPlaintextV1`.
     pub new_plaintext: Vec<u8>,
 }
 
-/// Updated vault blob.
+/// Updated card payload set.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpdateVaultResponse {
-    /// Encoded replacement `VaultBlobV1`.
-    pub new_vault_blob: Vec<u8>,
+    /// Encoded replacement `CardPayloadV1` values.
+    pub card_payloads: Vec<Vec<u8>>,
 }
 
 /// Multi-Card Vault core errors.
@@ -134,9 +130,6 @@ pub enum McvError {
     /// Threshold or total is invalid.
     #[error("invalid threshold scheme")]
     InvalidThreshold,
-    /// Device secret is invalid.
-    #[error("invalid device secret")]
-    InvalidDeviceSecret,
     /// Card payload is malformed.
     #[error("invalid card payload")]
     InvalidCardPayload,
@@ -194,7 +187,6 @@ pub fn create_vault_with_rng(
     kdf_params: KdfParams,
     rng: &mut impl Rng,
 ) -> Result<CreateVaultResponse, McvError> {
-    validate_device_secret(&request.device_secret)?;
     validate_plaintext(&request.initial_plaintext)?;
     validate_threshold(request.threshold, request.total)?;
 
@@ -216,36 +208,31 @@ pub fn create_vault_with_rng(
     )
     .map_err(map_shamir_error)?;
 
-    let card_payloads = shares
-        .iter()
-        .map(|share| wrap_card_share(&request.password, &context, share, rng))
-        .collect::<Result<Vec<_>, _>>()?;
-
     let vault_blob = encrypt_vault_blob(
         &request.password,
-        &request.device_secret,
         master_secret.as_slice(),
         &context,
         &request.initial_plaintext,
+        rng,
+    )?;
+    let card_payloads = build_card_payloads(
+        &request.password,
+        &context,
+        shares.as_slice(),
+        vault_blob.as_slice(),
         rng,
     )?;
 
     Ok(CreateVaultResponse {
         vault_id,
         scheme_id,
-        vault_blob,
         card_payloads,
     })
 }
 
 /// Unlocks a vault and returns encoded `VaultPlaintextV1` bytes.
 pub fn unlock_vault(request: UnlockVaultRequest) -> Result<UnlockVaultResponse, McvError> {
-    let context = recover_unlock_context(
-        &request.password,
-        &request.device_secret,
-        &request.vault_blob,
-        &request.card_payloads,
-    )?;
+    let context = recover_unlock_context(&request.password, &request.card_payloads)?;
     let plaintext = aead_decrypt(
         context.final_key.as_slice(),
         &context.vault_blob.vault_nonce,
@@ -256,6 +243,10 @@ pub fn unlock_vault(request: UnlockVaultRequest) -> Result<UnlockVaultResponse, 
     validate_plaintext(plaintext.as_slice())?;
 
     Ok(UnlockVaultResponse {
+        vault_id: context.vault_blob.vault_id,
+        scheme_id: context.vault_blob.scheme_id,
+        threshold: context.vault_blob.threshold,
+        total: context.vault_blob.total,
         plaintext: plaintext.to_vec(),
     })
 }
@@ -272,28 +263,39 @@ pub fn update_vault_with_rng(
     rng: &mut impl Rng,
 ) -> Result<UpdateVaultResponse, McvError> {
     validate_plaintext(&request.new_plaintext)?;
-    let context = recover_unlock_context(
+    let context = recover_unlock_context(&request.password, &request.card_payloads)?;
+    let scheme_id = random_secret(rng)[..ID_LEN].to_vec();
+    let create_context = VaultCreateContext {
+        vault_id: &context.vault_blob.vault_id,
+        scheme_id: &scheme_id,
+        threshold: context.vault_blob.threshold,
+        total: context.vault_blob.total,
+        kdf_params: context.vault_blob.kdf_params,
+    };
+    let master_secret = Zeroizing::new(random_secret(rng).to_vec());
+    let shares = BlahajSecretSharing::split(
+        master_secret.as_slice(),
+        context.vault_blob.threshold,
+        context.vault_blob.total,
+        rng,
+    )
+    .map_err(map_shamir_error)?;
+    let vault_blob = encrypt_vault_blob(
         &request.password,
-        &request.device_secret,
-        &request.vault_blob,
-        &request.card_payloads,
+        master_secret.as_slice(),
+        &create_context,
+        &request.new_plaintext,
+        rng,
+    )?;
+    let card_payloads = build_card_payloads(
+        &request.password,
+        &create_context,
+        shares.as_slice(),
+        vault_blob.as_slice(),
+        rng,
     )?;
 
-    let mut next_blob = context.vault_blob;
-    next_blob.vault_nonce = random_nonce(rng).to_vec();
-    next_blob.ciphertext.clear();
-    let aad = next_blob.aad().map_err(map_vault_format_error)?;
-    next_blob.ciphertext = aead_encrypt(
-        context.final_key.as_slice(),
-        &next_blob.vault_nonce,
-        &request.new_plaintext,
-        &aad,
-    )
-    .map_err(map_crypto_error)?;
-
-    Ok(UpdateVaultResponse {
-        new_vault_blob: next_blob.encode().map_err(map_vault_format_error)?,
-    })
+    Ok(UpdateVaultResponse { card_payloads })
 }
 
 struct UnlockContext {
@@ -311,30 +313,55 @@ struct VaultCreateContext<'a> {
 
 fn recover_unlock_context(
     password: &str,
-    device_secret: &[u8],
-    vault_blob_bytes: &[u8],
     card_payload_bytes: &[Vec<u8>],
 ) -> Result<UnlockContext, McvError> {
-    validate_device_secret(device_secret)?;
-    let vault_blob = VaultBlobV1::decode(vault_blob_bytes).map_err(map_vault_format_error)?;
+    let first_bytes = card_payload_bytes
+        .first()
+        .ok_or(McvError::NotEnoughShares)?;
+    let first_card = CardPayloadV1::decode(first_bytes).map_err(map_card_format_error)?;
+    let threshold = first_card.threshold;
+    if card_payload_bytes.len() < usize::from(threshold) {
+        return Err(McvError::NotEnoughShares);
+    }
+
+    let mut seen = HashSet::new();
+    let mut cards = Vec::with_capacity(usize::from(threshold));
+    let mut data_fragments = Vec::with_capacity(usize::from(threshold));
+
+    for encoded in card_payload_bytes {
+        let card = CardPayloadV1::decode(encoded).map_err(map_card_format_error)?;
+        validate_card_matches_card(&card, &first_card)?;
+        if !seen.insert(card.share_index) {
+            return Err(McvError::DuplicateShareIndex);
+        }
+        let data_fragment = Share::new(card.share_index, card.data_fragment.clone())
+            .map_err(|_error| McvError::InvalidCardPayload)?;
+        data_fragments.push(data_fragment);
+        cards.push(card);
+
+        if cards.len() == usize::from(threshold) {
+            break;
+        }
+    }
+
+    if data_fragments.len() < usize::from(threshold) {
+        return Err(McvError::NotEnoughShares);
+    }
+
+    let vault_blob_bytes =
+        BlahajSecretSharing::recover(threshold, &data_fragments).map_err(map_shamir_error)?;
+    let vault_blob = VaultBlobV1::decode(&vault_blob_bytes).map_err(map_vault_format_error)?;
     validate_algorithm_ids(vault_blob.kdf_id, vault_blob.aead_id, vault_blob.sss_id)?;
 
-    if card_payload_bytes.len() < usize::from(vault_blob.threshold) {
-        return Err(McvError::NotEnoughShares);
+    for card in &cards {
+        validate_card_matches_vault(card, &vault_blob)?;
     }
 
     let password_key = derive_password_key(password, &vault_blob.vault_salt, vault_blob.kdf_params)
         .map_err(map_crypto_error)?;
-    let mut seen = HashSet::new();
     let mut shares = Vec::with_capacity(usize::from(vault_blob.threshold));
 
-    for encoded in card_payload_bytes {
-        let card = CardPayloadV1::decode(encoded).map_err(map_card_format_error)?;
-        validate_card_matches_vault(&card, &vault_blob)?;
-        if !seen.insert(card.share_index) {
-            return Err(McvError::DuplicateShareIndex);
-        }
-
+    for card in &cards {
         let card_key = derive_password_key(password, &card.card_salt, card.kdf_params)
             .map_err(map_crypto_error)?;
         let share_bytes = aead_decrypt(
@@ -347,10 +374,6 @@ fn recover_unlock_context(
         let share = Share::new(card.share_index, share_bytes.to_vec())
             .map_err(|_error| McvError::InvalidCardPayload)?;
         shares.push(share);
-
-        if shares.len() == usize::from(vault_blob.threshold) {
-            break;
-        }
     }
 
     if shares.len() < usize::from(vault_blob.threshold) {
@@ -367,7 +390,6 @@ fn recover_unlock_context(
     let final_key = derive_final_key(
         master_secret.as_slice(),
         password_key.as_slice(),
-        device_secret,
         &vault_blob.vault_salt,
     )
     .map_err(map_crypto_error)?;
@@ -382,8 +404,12 @@ fn wrap_card_share(
     password: &str,
     context: &VaultCreateContext<'_>,
     share: &Share,
+    data_fragment: &Share,
     rng: &mut impl Rng,
 ) -> Result<Vec<u8>, McvError> {
+    if share.index() != data_fragment.index() {
+        return Err(McvError::ShamirError);
+    }
     let card_salt = random_salt(rng).to_vec();
     let card_nonce = random_nonce(rng).to_vec();
     let card_key =
@@ -400,6 +426,7 @@ fn wrap_card_share(
         card_salt,
         card_nonce,
         encrypted_share: Vec::new(),
+        data_fragment: data_fragment.value().to_vec(),
     };
     let aad = payload.aad().map_err(map_card_format_error)?;
     payload.encrypted_share = aead_encrypt(
@@ -414,7 +441,6 @@ fn wrap_card_share(
 
 fn encrypt_vault_blob(
     password: &str,
-    device_secret: &[u8],
     master_secret: &[u8],
     context: &VaultCreateContext<'_>,
     plaintext: &[u8],
@@ -424,13 +450,8 @@ fn encrypt_vault_blob(
     let vault_nonce = random_nonce(rng).to_vec();
     let password_key =
         derive_password_key(password, &vault_salt, context.kdf_params).map_err(map_crypto_error)?;
-    let final_key = derive_final_key(
-        master_secret,
-        password_key.as_slice(),
-        device_secret,
-        &vault_salt,
-    )
-    .map_err(map_crypto_error)?;
+    let final_key = derive_final_key(master_secret, password_key.as_slice(), &vault_salt)
+        .map_err(map_crypto_error)?;
 
     let mut blob = VaultBlobV1 {
         vault_id: context.vault_id.to_vec(),
@@ -465,20 +486,48 @@ fn validate_threshold(threshold: u8, total: u8) -> Result<(), McvError> {
         .map_err(|_error| McvError::InvalidThreshold)
 }
 
-fn validate_device_secret(device_secret: &[u8]) -> Result<(), McvError> {
-    if device_secret.len() == SECRET_LEN {
-        Ok(())
-    } else {
-        Err(McvError::InvalidDeviceSecret)
-    }
-}
-
 fn validate_algorithm_ids(kdf_id: u8, aead_id: u8, sss_id: u8) -> Result<(), McvError> {
     if kdf_id != KDF_ARGON2ID_V1 || aead_id != AEAD_XCHACHA20_POLY1305_V1 {
         return Err(McvError::UnsupportedVersion);
     }
     if sss_id != SSS_SHAMIR_GF256_V1 {
         return Err(McvError::UnsupportedVersion);
+    }
+    Ok(())
+}
+
+fn build_card_payloads(
+    password: &str,
+    context: &VaultCreateContext<'_>,
+    shares: &[Share],
+    vault_blob: &[u8],
+    rng: &mut impl Rng,
+) -> Result<Vec<Vec<u8>>, McvError> {
+    let data_fragments =
+        BlahajSecretSharing::split(vault_blob, context.threshold, context.total, rng)
+            .map_err(map_shamir_error)?;
+    shares
+        .iter()
+        .zip(data_fragments.iter())
+        .map(|(share, data_fragment)| wrap_card_share(password, context, share, data_fragment, rng))
+        .collect()
+}
+
+fn validate_card_matches_card(
+    card: &CardPayloadV1,
+    expected: &CardPayloadV1,
+) -> Result<(), McvError> {
+    if card.kdf_id != expected.kdf_id || card.aead_id != expected.aead_id {
+        return Err(McvError::UnsupportedVersion);
+    }
+    if card.vault_id != expected.vault_id {
+        return Err(McvError::InvalidVaultId);
+    }
+    if card.scheme_id != expected.scheme_id {
+        return Err(McvError::InvalidSchemeId);
+    }
+    if card.threshold != expected.threshold || card.total != expected.total {
+        return Err(McvError::InvalidThreshold);
     }
     Ok(())
 }
@@ -549,7 +598,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
-    use mcv_format::{VaultEntryV1, DEFAULT_CARD_PAYLOAD_BUDGET};
+    use mcv_format::{CardPayloadV1, VaultEntryV1, DEFAULT_CARD_PAYLOAD_BUDGET};
 
     use super::*;
 
@@ -571,7 +620,6 @@ mod tests {
             password: "correct horse battery staple".to_owned(),
             threshold: 3,
             total: 5,
-            device_secret: vec![7; SECRET_LEN],
             initial_plaintext: plaintext()?,
         })
     }
@@ -609,8 +657,6 @@ mod tests {
         let created = create()?;
         let unlocked = unlock_vault(UnlockVaultRequest {
             password: "correct horse battery staple".to_owned(),
-            device_secret: vec![7; SECRET_LEN],
-            vault_blob: created.vault_blob,
             card_payloads: vec![
                 created.card_payloads[0].clone(),
                 created.card_payloads[2].clone(),
@@ -633,8 +679,6 @@ mod tests {
         let created = create()?;
         let result = unlock_vault(UnlockVaultRequest {
             password: "correct horse battery staple".to_owned(),
-            device_secret: vec![7; SECRET_LEN],
-            vault_blob: created.vault_blob,
             card_payloads: created.card_payloads[..2].to_vec(),
         });
 
@@ -648,8 +692,6 @@ mod tests {
         let repeated = created.card_payloads[0].clone();
         let result = unlock_vault(UnlockVaultRequest {
             password: "correct horse battery staple".to_owned(),
-            device_secret: vec![7; SECRET_LEN],
-            vault_blob: created.vault_blob,
             card_payloads: vec![
                 repeated.clone(),
                 repeated,
@@ -667,8 +709,6 @@ mod tests {
         let created = create()?;
         let result = unlock_vault(UnlockVaultRequest {
             password: "wrong".to_owned(),
-            device_secret: vec![7; SECRET_LEN],
-            vault_blob: created.vault_blob,
             card_payloads: created.card_payloads[..3].to_vec(),
         });
 
@@ -680,40 +720,38 @@ mod tests {
     fn tampered_card_payload_fails() -> Result<(), McvError> {
         let created = create()?;
         let mut cards = created.card_payloads[..3].to_vec();
+        let mut decoded = CardPayloadV1::decode(&cards[0]).map_err(map_card_format_error)?;
+        let last = decoded.encrypted_share.len() - 1;
+        decoded.encrypted_share[last] ^= 0x55;
+        cards[0] = decoded.encode().map_err(map_card_format_error)?;
+
+        let result = unlock_vault(UnlockVaultRequest {
+            password: "correct horse battery staple".to_owned(),
+            card_payloads: cards,
+        });
+
+        assert!(matches!(result, Err(McvError::CardAuthenticationFailed)));
+        Ok(())
+    }
+
+    #[test]
+    fn tampered_data_fragment_fails() -> Result<(), McvError> {
+        let created = create()?;
+        let mut cards = created.card_payloads[..3].to_vec();
         let last = cards[0].len() - 1;
         cards[0][last] ^= 0x55;
 
         let result = unlock_vault(UnlockVaultRequest {
             password: "correct horse battery staple".to_owned(),
-            device_secret: vec![7; SECRET_LEN],
-            vault_blob: created.vault_blob,
             card_payloads: cards,
         });
 
         assert!(matches!(
             result,
-            Err(McvError::InvalidCardPayload | McvError::CardAuthenticationFailed)
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn tampered_vault_blob_fails() -> Result<(), McvError> {
-        let created = create()?;
-        let mut blob = created.vault_blob.clone();
-        let last = blob.len() - 1;
-        blob[last] ^= 0x55;
-
-        let result = unlock_vault(UnlockVaultRequest {
-            password: "correct horse battery staple".to_owned(),
-            device_secret: vec![7; SECRET_LEN],
-            vault_blob: blob,
-            card_payloads: created.card_payloads[..3].to_vec(),
-        });
-
-        assert!(matches!(
-            result,
-            Err(McvError::InvalidVaultBlob | McvError::VaultAuthenticationFailed)
+            Err(McvError::InvalidCardPayload
+                | McvError::InvalidVaultBlob
+                | McvError::VaultAuthenticationFailed
+                | McvError::ShamirError)
         ));
         Ok(())
     }
@@ -730,9 +768,11 @@ mod tests {
 
         let result = unlock_vault(UnlockVaultRequest {
             password: "correct horse battery staple".to_owned(),
-            device_secret: vec![7; SECRET_LEN],
-            vault_blob: first.vault_blob,
-            card_payloads: second.card_payloads[..3].to_vec(),
+            card_payloads: vec![
+                first.card_payloads[0].clone(),
+                first.card_payloads[1].clone(),
+                second.card_payloads[2].clone(),
+            ],
         });
 
         assert_eq!(result, Err(McvError::InvalidVaultId));
@@ -758,8 +798,6 @@ mod tests {
         let updated = update_vault_with_rng(
             UpdateVaultRequest {
                 password: "correct horse battery staple".to_owned(),
-                device_secret: vec![7; SECRET_LEN],
-                vault_blob: created.vault_blob,
                 card_payloads: created.card_payloads[..3].to_vec(),
                 new_plaintext: new_plaintext.clone(),
             },
@@ -767,9 +805,7 @@ mod tests {
         )?;
         let unlocked = unlock_vault(UnlockVaultRequest {
             password: "correct horse battery staple".to_owned(),
-            device_secret: vec![7; SECRET_LEN],
-            vault_blob: updated.new_vault_blob,
-            card_payloads: created.card_payloads[..3].to_vec(),
+            card_payloads: updated.card_payloads[..3].to_vec(),
         })?;
 
         assert_eq!(unlocked.plaintext, new_plaintext);

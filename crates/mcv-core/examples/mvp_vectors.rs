@@ -13,7 +13,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let final_key = derive_final_key(
         &[2_u8; SECRET_LEN],
         password_key.as_slice(),
-        &[3_u8; SECRET_LEN],
         &[4_u8; SALT_LEN],
     )?;
 

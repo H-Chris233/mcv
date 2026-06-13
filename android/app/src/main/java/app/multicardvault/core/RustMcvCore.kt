@@ -18,16 +18,19 @@ import app.multicardvault.uniffi.updateVault as ffiUpdateVault
 data class RustCreateVaultResult(
     val vaultId: ByteArray,
     val schemeId: ByteArray,
-    val vaultBlob: ByteArray,
     val cardPayloads: List<ByteArray>,
 )
 
 data class RustUnlockVaultResult(
+    val vaultId: ByteArray,
+    val schemeId: ByteArray,
+    val threshold: Int,
+    val total: Int,
     val plaintext: ByteArray,
 )
 
 data class RustUpdateVaultResult(
-    val newVaultBlob: ByteArray,
+    val cardPayloads: List<ByteArray>,
 )
 
 data class RustVaultPlaintext(
@@ -57,21 +60,16 @@ interface McvCore {
         password: String,
         threshold: Int,
         total: Int,
-        deviceSecret: ByteArray,
         initialPlaintext: ByteArray,
     ): RustCreateVaultResult
 
     fun unlockVault(
         password: String,
-        deviceSecret: ByteArray,
-        vaultBlob: ByteArray,
         cardPayloads: List<ByteArray>,
     ): RustUnlockVaultResult
 
     fun updateVault(
         password: String,
-        deviceSecret: ByteArray,
-        vaultBlob: ByteArray,
         cardPayloads: List<ByteArray>,
         newPlaintext: ByteArray,
     ): RustUpdateVaultResult
@@ -130,7 +128,6 @@ class RustMcvCore : McvCore {
         password: String,
         threshold: Int,
         total: Int,
-        deviceSecret: ByteArray,
         initialPlaintext: ByteArray,
     ): RustCreateVaultResult {
         val response =
@@ -140,7 +137,6 @@ class RustMcvCore : McvCore {
                         password = password,
                         threshold = threshold.toUByte(),
                         total = total.toUByte(),
-                        deviceSecret = deviceSecret,
                         initialPlaintext = initialPlaintext,
                     ),
                 )
@@ -151,15 +147,12 @@ class RustMcvCore : McvCore {
         return RustCreateVaultResult(
             vaultId = response.vaultId,
             schemeId = response.schemeId,
-            vaultBlob = response.vaultBlob,
             cardPayloads = response.cardPayloads,
         )
     }
 
     override fun unlockVault(
         password: String,
-        deviceSecret: ByteArray,
-        vaultBlob: ByteArray,
         cardPayloads: List<ByteArray>,
     ): RustUnlockVaultResult {
         val response =
@@ -167,8 +160,6 @@ class RustMcvCore : McvCore {
                 ffiUnlockVault(
                     UnlockVaultRequest(
                         password = password,
-                        deviceSecret = deviceSecret,
-                        vaultBlob = vaultBlob,
                         cardPayloads = cardPayloads,
                     ),
                 )
@@ -177,14 +168,16 @@ class RustMcvCore : McvCore {
             }
 
         return RustUnlockVaultResult(
+            vaultId = response.vaultId,
+            schemeId = response.schemeId,
+            threshold = response.threshold.toInt(),
+            total = response.total.toInt(),
             plaintext = response.plaintext,
         )
     }
 
     override fun updateVault(
         password: String,
-        deviceSecret: ByteArray,
-        vaultBlob: ByteArray,
         cardPayloads: List<ByteArray>,
         newPlaintext: ByteArray,
     ): RustUpdateVaultResult {
@@ -193,8 +186,6 @@ class RustMcvCore : McvCore {
                 ffiUpdateVault(
                     UpdateVaultRequest(
                         password = password,
-                        deviceSecret = deviceSecret,
-                        vaultBlob = vaultBlob,
                         cardPayloads = cardPayloads,
                         newPlaintext = newPlaintext,
                     ),
@@ -204,7 +195,7 @@ class RustMcvCore : McvCore {
             }
 
         return RustUpdateVaultResult(
-            newVaultBlob = response.newVaultBlob,
+            cardPayloads = response.cardPayloads,
         )
     }
 }

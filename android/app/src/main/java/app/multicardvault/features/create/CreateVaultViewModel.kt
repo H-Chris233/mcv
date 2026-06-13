@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.multicardvault.core.toStableHex
+import app.multicardvault.features.unlock.NotEnoughCardsException
 import app.multicardvault.features.unlock.UnlockVaultUseCase
 import app.multicardvault.features.unlock.UnlockedVaultSummary
 import app.multicardvault.features.vault.ListVaultsUseCase
@@ -101,6 +102,7 @@ class CreateVaultViewModel(
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
     private var currentSession: CreatedVaultSession? = null
+    private var pendingUnlockedAfterRewrite: CreateVaultUiState.Unlocked? = null
     private val writtenPayloadIndexes = mutableSetOf<Int>()
     private val scannedPayloads = mutableListOf<ByteArray>()
 
@@ -138,6 +140,7 @@ class CreateVaultViewModel(
                 }.fold(
                     onSuccess = { session ->
                         currentSession = session
+                        pendingUnlockedAfterRewrite = null
                         writtenPayloadIndexes.clear()
                         scannedPayloads.clear()
                         refreshSavedVaults()
@@ -146,7 +149,7 @@ class CreateVaultViewModel(
                             writtenCount = 0,
                             total = session.cardPayloads.size,
                             nextCardNumber = 1,
-                            message = "请贴近第 1 张空白 NDEF 标签。",
+                            message = "请贴近第 1 张 CUID 卡。",
                         )
                     },
                     onFailure = { CreateVaultUiState.Failed(UserSafeCreateError) },
@@ -177,6 +180,7 @@ class CreateVaultViewModel(
                 summary = summary,
                 cardPayloads = emptyList(),
             )
+        pendingUnlockedAfterRewrite = null
         writtenPayloadIndexes.clear()
         scannedPayloads.clear()
         _uiState.value =
@@ -185,6 +189,38 @@ class CreateVaultViewModel(
                 readCount = 0,
                 threshold = summary.threshold,
                 message = "请刷入任意 ${summary.threshold} 张卡解锁已有保险库。",
+            )
+    }
+
+    fun startRecoverFromCards() {
+        if (_form.value.password.isEmpty()) {
+            _uiState.value = CreateVaultUiState.Failed("请输入主密码后再从卡片恢复。")
+            return
+        }
+        if (!canStartCardReading()) return
+
+        val summary =
+            CreatedVaultSummary(
+                vaultIdHex = "",
+                displayName = "Recovered Vault",
+                threshold = _form.value.threshold,
+                total = _form.value.total,
+                cardPayloadCount = 0,
+            )
+        currentSession =
+            CreatedVaultSession(
+                summary = summary,
+                cardPayloads = emptyList(),
+            )
+        pendingUnlockedAfterRewrite = null
+        writtenPayloadIndexes.clear()
+        scannedPayloads.clear()
+        _uiState.value =
+            CreateVaultUiState.ReadingCards(
+                summary = summary,
+                readCount = 0,
+                threshold = summary.threshold,
+                message = "请刷入 CUID 卡。卡片足够后将自动恢复保险库。",
             )
     }
 
@@ -349,19 +385,27 @@ class CreateVaultViewModel(
         val nextIndex = nextWriteIndex(session)
         _uiState.value =
             if (nextIndex == null) {
-                CreateVaultUiState.ReadingCards(
-                    summary = session.summary,
-                    readCount = 0,
-                    threshold = session.summary.threshold,
-                    message = "写卡完成。请刷入任意 ${session.summary.threshold} 张卡解锁。",
-                )
+                val pending = pendingUnlockedAfterRewrite
+                if (pending == null) {
+                    CreateVaultUiState.ReadingCards(
+                        summary = session.summary,
+                        readCount = 0,
+                        threshold = session.summary.threshold,
+                        message = "写卡完成。请刷入任意 ${session.summary.threshold} 张卡解锁。",
+                    )
+                } else {
+                    pendingUnlockedAfterRewrite = null
+                    scannedPayloads.clear()
+                    scannedPayloads += session.cardPayloads.map { it.copyOf() }
+                    pending.copy(message = "条目已保存，所有 CUID 卡已重写。")
+                }
             } else {
                 CreateVaultUiState.WritingCards(
                     summary = session.summary,
                     writtenCount = writtenPayloadIndexes.size,
                     total = session.cardPayloads.size,
                     nextCardNumber = nextIndex + 1,
-                    message = "写入成功。请贴近第 ${nextIndex + 1} 张空白 NDEF 标签。",
+                    message = "写入成功。请贴近第 ${nextIndex + 1} 张 CUID 卡。",
                 )
             }
     }
@@ -381,7 +425,7 @@ class CreateVaultViewModel(
         }
 
         scannedPayloads += result.payload.copyOf()
-        if (scannedPayloads.size >= state.threshold) {
+        if (state.summary.isCardRecovery() || scannedPayloads.size >= state.threshold) {
             unlockScannedCards(state.summary)
         } else {
             _uiState.value =
@@ -405,14 +449,41 @@ class CreateVaultViewModel(
                 runCatching {
                     withContext(workDispatcher) {
                         unlockVaultUseCase(
-                            vaultIdHex = summary.vaultIdHex,
+                            vaultIdHex = summary.vaultIdHex.ifBlank { null },
+                            displayName = summary.displayName,
                             password = _form.value.password,
                             cardPayloads = payloads,
                         )
                     }
                 }.fold(
-                    onSuccess = { unlocked -> CreateVaultUiState.Unlocked(summary, unlocked) },
-                    onFailure = { CreateVaultUiState.Failed(UnlockFailedMessage) },
+                    onSuccess = { unlocked ->
+                        val resolvedSummary =
+                            if (summary.isCardRecovery()) {
+                                CreatedVaultSummary(
+                                    vaultIdHex = unlocked.vaultIdHex,
+                                    displayName = unlocked.displayName,
+                                    threshold = unlocked.threshold,
+                                    total = unlocked.total,
+                                    cardPayloadCount = 0,
+                                )
+                            } else {
+                                summary
+                            }
+                        refreshSavedVaults()
+                        CreateVaultUiState.Unlocked(resolvedSummary, unlocked)
+                    },
+                    onFailure = { error ->
+                        if (error is NotEnoughCardsException && summary.isCardRecovery()) {
+                            CreateVaultUiState.ReadingCards(
+                                summary = summary,
+                                readCount = payloads.size,
+                                threshold = summary.threshold,
+                                message = "已读取 ${payloads.size} 张卡，卡片还不够，请继续刷入。",
+                            )
+                        } else {
+                            CreateVaultUiState.Failed(UnlockFailedMessage)
+                        }
+                    },
                 )
         }
     }
@@ -428,7 +499,7 @@ class CreateVaultViewModel(
         val password = _form.value.password
 
         viewModelScope.launch {
-            _uiState.value = state.copy(isSaving = true, message = "正在保存 Vault Blob。")
+            _uiState.value = state.copy(isSaving = true, message = "正在生成新的卡片数据。")
             _uiState.value =
                 runCatching {
                     withContext(workDispatcher) {
@@ -443,15 +514,31 @@ class CreateVaultViewModel(
                 }.fold(
                     onSuccess = { updated ->
                         refreshSavedVaults()
-                        state.copy(
-                            unlocked =
-                                state.unlocked.copy(
-                                    plaintextSize = updated.plaintextSize,
-                                    entries = entries,
-                                ),
-                            draft = nextDraft,
-                            isSaving = false,
-                            message = successMessage,
+                        val unlockedState =
+                            state.copy(
+                                unlocked =
+                                    state.unlocked.copy(
+                                        plaintextSize = updated.plaintextSize,
+                                        entries = entries,
+                                    ),
+                                draft = nextDraft,
+                                isSaving = false,
+                                message = successMessage,
+                            )
+                        currentSession =
+                            CreatedVaultSession(
+                                summary = state.summary,
+                                cardPayloads = updated.cardPayloads,
+                            )
+                        pendingUnlockedAfterRewrite = unlockedState
+                        writtenPayloadIndexes.clear()
+                        scannedPayloads.clear()
+                        CreateVaultUiState.WritingCards(
+                            summary = state.summary,
+                            writtenCount = 0,
+                            total = updated.cardPayloads.size,
+                            nextCardNumber = 1,
+                            message = "$successMessage 请依次重写所有 CUID 卡。",
                         )
                     },
                     onFailure = {
@@ -497,6 +584,17 @@ class CreateVaultViewModel(
     private fun nextWriteIndex(session: CreatedVaultSession): Int? =
         session.cardPayloads.indices.firstOrNull { it !in writtenPayloadIndexes }
 
+    private fun canStartCardReading(): Boolean =
+        when (_uiState.value) {
+            CreateVaultUiState.Creating -> false
+            is CreateVaultUiState.WritingCards -> false
+            is CreateVaultUiState.ReadingCards -> false
+            is CreateVaultUiState.Unlocking -> false
+            else -> true
+        }
+
+    private fun CreatedVaultSummary.isCardRecovery(): Boolean = vaultIdHex.isBlank()
+
     private fun nfcMessage(result: NfcCardResult): String =
         when (result) {
             is NfcCardResult.Success -> "NFC 操作成功。"
@@ -534,7 +632,7 @@ class CreateVaultViewModel(
     }
 
     companion object {
-        private const val UserSafeCreateError = "无法创建保险库。请检查主密码、设备密钥或本地数据状态。"
+        private const val UserSafeCreateError = "无法创建保险库。请检查主密码或卡片数据状态。"
         private const val UnlockFailedMessage = "密码错误、卡片不属于该保险库，或数据已损坏。"
         private const val SaveFailedMessage = "无法保存条目。请确认 Vault 仍处于解锁会话并重试。"
         private val EntryIdRandom = SecureRandom()

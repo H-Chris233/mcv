@@ -12,25 +12,22 @@ This document defines what the MVP is designed to resist and what remains out of
 - User password while entered by the user.
 - Password-derived keys.
 - Final Vault encryption key.
-- Android Device Secret.
 - Card Payload bytes and Vault Blob bytes.
 
 ## Trust Boundaries
 
 - Rust protocol code owns cryptographic construction, format parsing, and validation.
-- Android owns UI, NFC I/O, local persistence, Keystore wrapping, and lifecycle behavior.
+- Android owns UI, NFC I/O, local metadata persistence, and lifecycle behavior.
 - NFC tags are untrusted storage.
 - Room and DataStore are untrusted for secret material and must not store plaintext secrets.
-- Android Keystore is trusted only to protect the wrapping key on non-compromised devices.
 
 ## In Scope
 
-- Attacker obtains the local Vault Blob but not enough valid cards.
 - Attacker obtains fewer than `threshold` valid card payloads.
-- Attacker knows the user password but lacks enough valid cards and the Device Secret.
+- Attacker knows the user password but lacks enough valid cards.
 - Attacker copies some cards but lacks the user password.
 - Attacker tampers with Card Payload headers or encrypted share bytes.
-- Attacker tampers with Vault Blob headers or ciphertext.
+- Attacker tampers with card Data Fragments, recovered Vault Blob headers, or ciphertext.
 - Attacker mixes cards from another Vault or another Scheme.
 - Attacker scans the same card repeatedly to satisfy the threshold.
 - Attacker tries an offline password-guessing attack against stolen card payloads or Vault Blob data.
@@ -45,16 +42,16 @@ This document defines what the MVP is designed to resist and what remains out of
 - Supply-chain compromise or malicious APK replacement.
 - Weak user passwords.
 - Users storing all cards, phone, and password together.
-- Cross-device recovery. The MVP deliberately binds decrypt capability to the current Device Secret.
+- Recovery from fewer than threshold cards.
 
 ## Main Mitigations
 
-- NFC tags store only AEAD-wrapped Shamir shares.
+- CUID Cards store AEAD-wrapped Shamir Shares and Shamir Data Fragments of the encoded Vault Blob.
 - Vault data is encrypted with XChaCha20-Poly1305.
 - Card share wrapping uses per-card salt and nonce.
 - Vault encryption uses per-vault salt and nonce.
 - User passwords are processed through Argon2id before key use.
-- The Final Key is derived through HKDF-SHA256 from Master Secret, Password Key, and Device Secret.
+- The Final Key is derived through HKDF-SHA256 from Master Secret and Password Key.
 - Card Payload and Vault Blob headers are authenticated as AAD.
 - `vault_id`, `scheme_id`, `threshold`, `total`, and `share_index` are checked before recovery.
 - Duplicate `share_index` values are rejected.
@@ -63,7 +60,7 @@ This document defines what the MVP is designed to resist and what remains out of
 
 ## Residual Risks
 
-- A weak user password can still be attacked offline if enough encrypted card payloads and the Vault Blob are stolen.
+- A weak user password can still be attacked offline if enough card payloads are stolen.
 - The first release has not received independent security review.
-- Manual NTAG216 hardware testing is required before a user-facing APK release.
+- Manual CUID Card hardware testing is required before a user-facing APK release.
 - The MVP single-screen UI is intentionally minimal and may not guide all recovery/error scenarios.

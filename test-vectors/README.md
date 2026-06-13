@@ -11,4 +11,4 @@ cargo run -p mcv-core --example m1_vector
 ```
 
 `mvp_vectors` covers low-level Shamir, HKDF, and AEAD fixtures.
-`m1_vector` covers end-to-end CardPayload and VaultBlob fixtures.
+`m1_vector` covers end-to-end CardPayload fixtures and a VaultBlob recovered from card Data Fragments.

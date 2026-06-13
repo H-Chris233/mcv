@@ -32,5 +32,5 @@ cargo deny check advisories bans sources
 ## Release Rules
 
 - Keep the release labelled experimental and unaudited.
-- Do not publish until real NTAG216 manual tests are complete.
-- Do not include plaintext Vault data, card payload dumps from private tags, passwords, or Device Secret bytes in release artifacts.
+- Do not publish until real CUID Card manual tests are complete.
+- Do not include plaintext Vault data, card payload dumps from private tags, passwords, or key material in release artifacts.

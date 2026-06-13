@@ -3,6 +3,7 @@ package app.multicardvault
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.os.Bundle
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -43,9 +43,8 @@ import app.multicardvault.features.unlock.UnlockVaultUseCase
 import app.multicardvault.features.vault.ListVaultsUseCase
 import app.multicardvault.features.vault.SavedVaultSummary
 import app.multicardvault.features.vault.UpdateVaultUseCase
-import app.multicardvault.nfc.NdefNfcRepository
+import app.multicardvault.nfc.MifareClassicNfcRepository
 import app.multicardvault.nfc.NfcRepository
-import app.multicardvault.security.KeystoreDeviceSecretRepository
 import app.multicardvault.settings.AppSettings
 import app.multicardvault.settings.DataStoreAppSettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +58,7 @@ object McvAppIdentity {
     const val Purpose = "Local-first multi-card threshold encrypted vault"
 }
 
-class MainActivity : FragmentActivity() {
+class MainActivity : ComponentActivity() {
     private val database: McvDatabase by lazy {
         McvDatabase.open(applicationContext)
     }
@@ -69,7 +68,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private val nfcRepository: NfcRepository by lazy {
-        NdefNfcRepository()
+        MifareClassicNfcRepository()
     }
 
     private val appSettingsRepository: DataStoreAppSettingsRepository by lazy {
@@ -82,14 +81,12 @@ class MainActivity : FragmentActivity() {
         val dao = database.vaultDao()
         val core = RustMcvCore()
         val vaultRepository = RoomVaultRepository(dao)
-        val deviceSecretRepository = KeystoreDeviceSecretRepository(dao, this)
         val factory =
             CreateVaultViewModel.Factory(
                 createVaultUseCase =
                     CreateVaultUseCase(
                         core = core,
                         vaultRepository = vaultRepository,
-                        deviceSecretRepository = deviceSecretRepository,
                     ),
                 listVaultsUseCase =
                     ListVaultsUseCase(
@@ -99,13 +96,11 @@ class MainActivity : FragmentActivity() {
                     UnlockVaultUseCase(
                         core = core,
                         vaultRepository = vaultRepository,
-                        deviceSecretRepository = deviceSecretRepository,
                     ),
                 updateVaultUseCase =
                     UpdateVaultUseCase(
                         core = core,
                         vaultRepository = vaultRepository,
-                        deviceSecretRepository = deviceSecretRepository,
                     ),
                 appSettingsRepository = appSettingsRepository,
             )
@@ -204,6 +199,7 @@ fun MultiCardVaultApp(
                     password = form.password,
                     uiState = uiState,
                     onUnlockClick = viewModel::startUnlockSavedVault,
+                    onRecoverClick = viewModel::startRecoverFromCards,
                 )
                 CreateVaultStatus(
                     uiState = uiState,
@@ -302,6 +298,7 @@ private fun SavedVaultList(
     password: String,
     uiState: CreateVaultUiState,
     onUnlockClick: (SavedVaultSummary) -> Unit,
+    onRecoverClick: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -309,8 +306,14 @@ private fun SavedVaultList(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("已有保险库", style = MaterialTheme.typography.titleLarge)
+            Button(
+                onClick = onRecoverClick,
+                enabled = password.isNotEmpty() && canStartSavedVaultUnlock(uiState),
+            ) {
+                Text("从 CUID 卡恢复")
+            }
             if (vaults.isEmpty()) {
-                Text("本机暂无已保存的 Vault。")
+                Text("本机暂无已保存的 Vault。可直接用主密码和足够数量的 CUID 卡恢复。")
             } else {
                 vaults.forEach { vault ->
                     Card(modifier = Modifier.fillMaxWidth()) {
@@ -379,7 +382,7 @@ private fun CreateVaultForm(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
-                text = "创建本地保险库",
+                text = "创建卡片保险库",
                 style = MaterialTheme.typography.titleLarge,
             )
             OutlinedTextField(
@@ -427,7 +430,7 @@ private fun CreateVaultStatus(
 ) {
     when (uiState) {
         CreateVaultUiState.Editing -> Box(modifier = Modifier.fillMaxWidth())
-        CreateVaultUiState.Creating -> Text("正在调用 Rust core 生成 Vault Blob 和 Card Payload。")
+        CreateVaultUiState.Creating -> Text("正在调用 Rust core 生成卡片侧恢复数据。")
         is CreateVaultUiState.Failed -> Text(uiState.message)
         is CreateVaultUiState.WritingCards ->
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -452,8 +455,12 @@ private fun CreateVaultStatus(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text("读取卡片解锁", style = MaterialTheme.typography.titleMedium)
-                    Text("Vault ID：${uiState.summary.vaultIdHex.take(16)}...")
-                    Text("读取进度：${uiState.readCount} / ${uiState.threshold}")
+                    if (uiState.summary.vaultIdHex.isNotBlank()) {
+                        Text("Vault ID：${uiState.summary.vaultIdHex.take(16)}...")
+                        Text("读取进度：${uiState.readCount} / ${uiState.threshold}")
+                    } else {
+                        Text("已读取：${uiState.readCount} 张卡")
+                    }
                     Text(uiState.message)
                 }
             }
@@ -465,8 +472,12 @@ private fun CreateVaultStatus(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text("正在解锁", style = MaterialTheme.typography.titleMedium)
-                    Text("读取进度：${uiState.readCount} / ${uiState.threshold}")
-                    Text("正在调用 Rust core 恢复密钥并解密 Vault Blob。")
+                    if (uiState.summary.vaultIdHex.isNotBlank()) {
+                        Text("读取进度：${uiState.readCount} / ${uiState.threshold}")
+                    } else {
+                        Text("已读取：${uiState.readCount} 张卡")
+                    }
+                    Text("正在调用 Rust core 从卡片恢复数据并解密。")
                 }
             }
 
