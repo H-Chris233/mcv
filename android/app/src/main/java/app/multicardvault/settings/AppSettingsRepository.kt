@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import app.multicardvault.features.create.CreateVaultUseCase
+import app.multicardvault.features.create.SafeThresholdPreset
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -56,12 +57,19 @@ class DataStoreAppSettingsRepository(
                     throw error
                 }
             }.map { preferences ->
-                val total = preferences[DefaultTotalKey] ?: CreateVaultUseCase.DefaultTotal
-                val threshold = preferences[DefaultThresholdKey] ?: CreateVaultUseCase.DefaultThreshold
+                val preset =
+                    SafeThresholdPreset.from(
+                        threshold =
+                            preferences[DefaultThresholdKey]
+                                ?: SafeThresholdPreset.Default.threshold,
+                        total =
+                            preferences[DefaultTotalKey]
+                                ?: SafeThresholdPreset.Default.total,
+                    )
                 AppSettings(
                     onboardingCompleted = preferences[OnboardingCompletedKey] ?: false,
-                    defaultThreshold = threshold.coerceIn(1, total.coerceAtLeast(1)),
-                    defaultTotal = total.coerceIn(1, MaxTotal),
+                    defaultThreshold = preset.threshold,
+                    defaultTotal = preset.total,
                     nfcExperimentalEnabled = preferences[NfcExperimentalEnabledKey] ?: false,
                     diagnosticsEnabled = preferences[DiagnosticsEnabledKey] ?: false,
                 )
@@ -73,21 +81,27 @@ class DataStoreAppSettingsRepository(
 
     override suspend fun setDefaultThreshold(value: Int) {
         dataStore.edit { preferences ->
-            val total =
-                (preferences[DefaultTotalKey] ?: CreateVaultUseCase.DefaultTotal)
-                    .coerceIn(1, MaxTotal)
-            preferences[DefaultThresholdKey] = value.coerceIn(1, total)
+            val preset =
+                SafeThresholdPreset.from(
+                    threshold = value,
+                    total = preferences[DefaultTotalKey] ?: SafeThresholdPreset.Default.total,
+                )
+            preferences[DefaultThresholdKey] = preset.threshold
+            preferences[DefaultTotalKey] = preset.total
         }
     }
 
     override suspend fun setDefaultTotal(value: Int) {
         dataStore.edit { preferences ->
-            val total = value.coerceIn(1, MaxTotal)
-            val threshold =
-                (preferences[DefaultThresholdKey] ?: CreateVaultUseCase.DefaultThreshold)
-                    .coerceIn(1, total)
-            preferences[DefaultTotalKey] = total
-            preferences[DefaultThresholdKey] = threshold
+            val preset =
+                SafeThresholdPreset.from(
+                    threshold =
+                        preferences[DefaultThresholdKey]
+                            ?: SafeThresholdPreset.Default.threshold,
+                    total = value,
+                )
+            preferences[DefaultTotalKey] = preset.total
+            preferences[DefaultThresholdKey] = preset.threshold
         }
     }
 
@@ -100,7 +114,6 @@ class DataStoreAppSettingsRepository(
     }
 
     private companion object {
-        const val MaxTotal = 255
         val OnboardingCompletedKey = booleanPreferencesKey("onboarding_completed")
         val DefaultThresholdKey = intPreferencesKey("default_threshold")
         val DefaultTotalKey = intPreferencesKey("default_total")

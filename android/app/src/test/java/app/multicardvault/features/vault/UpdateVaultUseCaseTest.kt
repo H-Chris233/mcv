@@ -1,6 +1,7 @@
 package app.multicardvault.features.vault
 
 import app.multicardvault.core.McvCore
+import app.multicardvault.core.RustCardPayloadInspection
 import app.multicardvault.core.RustCreateVaultResult
 import app.multicardvault.core.RustUnlockVaultResult
 import app.multicardvault.core.RustUpdateVaultResult
@@ -128,6 +129,18 @@ private class UpdateFakeMcvCore(
         receivedCardPayloadCount = cardPayloads.size
         return RustUpdateVaultResult(cardPayloads = listOf(byteArrayOf(8), byteArrayOf(9)))
     }
+
+    override fun inspectCardPayload(cardPayload: ByteArray): RustCardPayloadInspection =
+        RustCardPayloadInspection(
+            vaultId = ByteArray(16) { 1 },
+            schemeId = ByteArray(16) { 2 },
+            threshold = 2,
+            total = 3,
+            shareIndex = 1,
+            kdfId = 1,
+            aeadId = 1,
+            formatVersion = 1,
+        )
 }
 
 private class UpdateFakeVaultRepository : VaultRepository {

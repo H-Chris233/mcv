@@ -31,8 +31,9 @@ class CreateVaultUseCase(
         val normalizedDisplayName = displayName.trim()
         require(normalizedDisplayName.isNotEmpty()) { "vault display name is required" }
         require(password.isNotEmpty()) { "password is required" }
-        require(total in 1..MaxTotal) { "total must be between 1 and 255" }
-        require(threshold in 1..total) { "threshold must be between 1 and total" }
+        require(SafeThresholdPreset.isAllowed(threshold, total)) {
+            "threshold preset is not supported"
+        }
 
         val plaintext = core.emptyVaultPlaintext()
         val created =
@@ -72,8 +73,7 @@ class CreateVaultUseCase(
     }
 
     companion object {
-        const val DefaultThreshold = 3
-        const val DefaultTotal = 5
-        private const val MaxTotal = 255
+        val DefaultThreshold: Int = SafeThresholdPreset.Default.threshold
+        val DefaultTotal: Int = SafeThresholdPreset.Default.total
     }
 }

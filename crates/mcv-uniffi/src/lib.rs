@@ -71,6 +71,27 @@ pub struct UpdateVaultResponse {
     pub card_payloads: Vec<Vec<u8>>,
 }
 
+/// UniFFI-safe non-sensitive card payload metadata.
+#[derive(Clone, Debug, Eq, PartialEq, uniffi::Record)]
+pub struct CardPayloadInspection {
+    /// Vault ID bytes.
+    pub vault_id: Vec<u8>,
+    /// Scheme ID bytes.
+    pub scheme_id: Vec<u8>,
+    /// Shares required to recover.
+    pub threshold: u8,
+    /// Total cards in the card set.
+    pub total: u8,
+    /// Current share index.
+    pub share_index: u8,
+    /// KDF algorithm identifier.
+    pub kdf_id: u8,
+    /// AEAD algorithm identifier.
+    pub aead_id: u8,
+    /// Card payload format version.
+    pub format_version: u8,
+}
+
 /// UniFFI-safe plaintext vault entry.
 #[derive(Clone, Debug, Eq, PartialEq, uniffi::Record)]
 pub struct VaultPlaintextEntry {
@@ -179,6 +200,13 @@ pub fn update_vault(request: UpdateVaultRequest) -> Result<UpdateVaultResponse, 
     Ok(response.into())
 }
 
+/// Inspects non-sensitive card payload metadata through the binding boundary.
+#[uniffi::export]
+pub fn inspect_card_payload(card_payload: Vec<u8>) -> Result<CardPayloadInspection, McvFfiError> {
+    let inspection = mcv_core::inspect_card_payload(&card_payload).map_err(McvFfiError::from)?;
+    Ok(inspection.into())
+}
+
 /// Decodes encoded `VaultPlaintextV1` bytes into UniFFI records.
 #[uniffi::export]
 pub fn decode_vault_plaintext(bytes: Vec<u8>) -> Result<VaultPlaintext, McvFfiError> {
@@ -249,6 +277,21 @@ impl From<mcv_core::UpdateVaultResponse> for UpdateVaultResponse {
     fn from(value: mcv_core::UpdateVaultResponse) -> Self {
         Self {
             card_payloads: value.card_payloads,
+        }
+    }
+}
+
+impl From<mcv_core::CardPayloadInspection> for CardPayloadInspection {
+    fn from(value: mcv_core::CardPayloadInspection) -> Self {
+        Self {
+            vault_id: value.vault_id,
+            scheme_id: value.scheme_id,
+            threshold: value.threshold,
+            total: value.total,
+            share_index: value.share_index,
+            kdf_id: value.kdf_id,
+            aead_id: value.aead_id,
+            format_version: value.format_version,
         }
     }
 }
@@ -341,6 +384,26 @@ mod tests {
     #[test]
     fn binding_boundary_exposes_empty_plaintext() -> Result<(), McvFfiError> {
         assert!(!empty_vault_plaintext()?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn binding_boundary_inspects_card_payload_metadata() -> Result<(), McvFfiError> {
+        let created = create_vault(CreateVaultRequest {
+            password: "passphrase".to_owned(),
+            threshold: 2,
+            total: 3,
+            initial_plaintext: empty_vault_plaintext()?,
+        })?;
+
+        let inspection = inspect_card_payload(created.card_payloads[0].clone())?;
+
+        assert_eq!(inspection.vault_id, created.vault_id);
+        assert_eq!(inspection.scheme_id, created.scheme_id);
+        assert_eq!(inspection.threshold, 2);
+        assert_eq!(inspection.total, 3);
+        assert_eq!(inspection.share_index, 1);
+        assert_eq!(inspection.format_version, mcv_format::FORMAT_VERSION_V1);
         Ok(())
     }
 

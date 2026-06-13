@@ -1,6 +1,7 @@
 package app.multicardvault.features.create
 
 import app.multicardvault.core.McvCore
+import app.multicardvault.core.RustCardPayloadInspection
 import app.multicardvault.core.RustCreateVaultResult
 import app.multicardvault.core.RustUnlockVaultResult
 import app.multicardvault.core.RustUpdateVaultResult
@@ -66,6 +67,24 @@ class CreateVaultUseCaseTest {
 
             assertTrue(result.isFailure)
         }
+
+    @Test
+    fun createVaultRejectsUnsafeThresholdPreset() =
+        runTest {
+            val useCase = CreateVaultUseCase(FakeMcvCore(), FakeVaultRepository())
+
+            val result =
+                runCatching {
+                    useCase(
+                        displayName = "Primary",
+                        password = "passphrase",
+                        threshold = 4,
+                        total = 5,
+                    )
+                }
+
+            assertTrue(result.isFailure)
+        }
 }
 
 private class FakeMcvCore : McvCore {
@@ -108,6 +127,18 @@ private class FakeMcvCore : McvCore {
         cardPayloads: List<ByteArray>,
         newPlaintext: ByteArray,
     ): RustUpdateVaultResult = RustUpdateVaultResult(listOf(byteArrayOf(10)))
+
+    override fun inspectCardPayload(cardPayload: ByteArray): RustCardPayloadInspection =
+        RustCardPayloadInspection(
+            vaultId = ByteArray(16) { 1 },
+            schemeId = ByteArray(16) { 2 },
+            threshold = 3,
+            total = 5,
+            shareIndex = 1,
+            kdfId = 1,
+            aeadId = 1,
+            formatVersion = 1,
+        )
 }
 
 private class FakeVaultRepository(

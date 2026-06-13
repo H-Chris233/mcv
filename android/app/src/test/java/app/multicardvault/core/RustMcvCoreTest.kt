@@ -120,4 +120,23 @@ class RustMcvCoreTest {
         assertEquals(3, updated.cardPayloads.size)
         assertTrue(updated.cardPayloads.all { it.isNotEmpty() })
     }
+
+    @Test
+    fun inspectCardPayloadThroughUniffiReturnsNonSensitiveMetadata() {
+        val created =
+            core.createVault(
+                password = "correct horse battery staple",
+                threshold = 2,
+                total = 3,
+                initialPlaintext = core.emptyVaultPlaintext(),
+            )
+
+        val inspection = core.inspectCardPayload(created.cardPayloads.first())
+
+        assertEquals(created.vaultId.toList(), inspection.vaultId.toList())
+        assertEquals(created.schemeId.toList(), inspection.schemeId.toList())
+        assertEquals(2, inspection.threshold)
+        assertEquals(3, inspection.total)
+        assertEquals(1, inspection.shareIndex)
+    }
 }

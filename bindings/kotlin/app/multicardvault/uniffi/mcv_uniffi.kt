@@ -727,6 +727,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -749,6 +751,8 @@ fun uniffi_mcv_uniffi_checksum_func_decode_vault_plaintext(
 fun uniffi_mcv_uniffi_checksum_func_empty_vault_plaintext(
 ): Short
 fun uniffi_mcv_uniffi_checksum_func_encode_vault_plaintext(
+): Short
+fun uniffi_mcv_uniffi_checksum_func_inspect_card_payload(
 ): Short
 fun uniffi_mcv_uniffi_checksum_func_mcv_project_name(
 ): Short
@@ -810,6 +814,8 @@ fun uniffi_mcv_uniffi_fn_func_decode_vault_plaintext(`bytes`: RustBuffer.ByValue
 fun uniffi_mcv_uniffi_fn_func_empty_vault_plaintext(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_mcv_uniffi_fn_func_encode_vault_plaintext(`plaintext`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_mcv_uniffi_fn_func_inspect_card_payload(`cardPayload`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_mcv_uniffi_fn_func_mcv_project_name(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -955,6 +961,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_mcv_uniffi_checksum_func_encode_vault_plaintext() != 37694.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_mcv_uniffi_checksum_func_inspect_card_payload() != 117.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_mcv_uniffi_checksum_func_mcv_project_name() != 3038.toShort()) {
@@ -1167,6 +1176,89 @@ public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
     override fun write(value: ByteArray, buf: ByteBuffer) {
         buf.putInt(value.size)
         buf.put(value)
+    }
+}
+
+
+
+/**
+ * UniFFI-safe non-sensitive card payload metadata.
+ */
+data class CardPayloadInspection (
+    /**
+     * Vault ID bytes.
+     */
+    var `vaultId`: kotlin.ByteArray, 
+    /**
+     * Scheme ID bytes.
+     */
+    var `schemeId`: kotlin.ByteArray, 
+    /**
+     * Shares required to recover.
+     */
+    var `threshold`: kotlin.UByte, 
+    /**
+     * Total cards in the card set.
+     */
+    var `total`: kotlin.UByte, 
+    /**
+     * Current share index.
+     */
+    var `shareIndex`: kotlin.UByte, 
+    /**
+     * KDF algorithm identifier.
+     */
+    var `kdfId`: kotlin.UByte, 
+    /**
+     * AEAD algorithm identifier.
+     */
+    var `aeadId`: kotlin.UByte, 
+    /**
+     * Card payload format version.
+     */
+    var `formatVersion`: kotlin.UByte
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCardPayloadInspection: FfiConverterRustBuffer<CardPayloadInspection> {
+    override fun read(buf: ByteBuffer): CardPayloadInspection {
+        return CardPayloadInspection(
+            FfiConverterByteArray.read(buf),
+            FfiConverterByteArray.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterUByte.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CardPayloadInspection) = (
+            FfiConverterByteArray.allocationSize(value.`vaultId`) +
+            FfiConverterByteArray.allocationSize(value.`schemeId`) +
+            FfiConverterUByte.allocationSize(value.`threshold`) +
+            FfiConverterUByte.allocationSize(value.`total`) +
+            FfiConverterUByte.allocationSize(value.`shareIndex`) +
+            FfiConverterUByte.allocationSize(value.`kdfId`) +
+            FfiConverterUByte.allocationSize(value.`aeadId`) +
+            FfiConverterUByte.allocationSize(value.`formatVersion`)
+    )
+
+    override fun write(value: CardPayloadInspection, buf: ByteBuffer) {
+            FfiConverterByteArray.write(value.`vaultId`, buf)
+            FfiConverterByteArray.write(value.`schemeId`, buf)
+            FfiConverterUByte.write(value.`threshold`, buf)
+            FfiConverterUByte.write(value.`total`, buf)
+            FfiConverterUByte.write(value.`shareIndex`, buf)
+            FfiConverterUByte.write(value.`kdfId`, buf)
+            FfiConverterUByte.write(value.`aeadId`, buf)
+            FfiConverterUByte.write(value.`formatVersion`, buf)
     }
 }
 
@@ -1949,6 +2041,19 @@ public object FfiConverterSequenceTypeVaultPlaintextEntry: FfiConverterRustBuffe
     uniffiRustCallWithError(McvFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_mcv_uniffi_fn_func_encode_vault_plaintext(
         FfiConverterTypeVaultPlaintext.lower(`plaintext`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Inspects non-sensitive card payload metadata through the binding boundary.
+         */
+    @Throws(McvFfiException::class) fun `inspectCardPayload`(`cardPayload`: kotlin.ByteArray): CardPayloadInspection {
+            return FfiConverterTypeCardPayloadInspection.lift(
+    uniffiRustCallWithError(McvFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_mcv_uniffi_fn_func_inspect_card_payload(
+        FfiConverterByteArray.lower(`cardPayload`),_status)
 }
     )
     }

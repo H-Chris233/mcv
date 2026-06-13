@@ -10,6 +10,7 @@ import app.multicardvault.uniffi.McvFfiException
 
 data class UnlockedVaultSummary(
     val vaultIdHex: String,
+    val schemeIdHex: String,
     val displayName: String,
     val threshold: Int,
     val total: Int,
@@ -54,6 +55,7 @@ class UnlockVaultUseCase(
             val decoded = core.decodeVaultPlaintext(plaintext)
             return UnlockedVaultSummary(
                 vaultIdHex = recoveredVaultIdHex,
+                schemeIdHex = unlocked.schemeId.toStableHex(),
                 displayName = resolvedDisplayName,
                 threshold = unlocked.threshold,
                 total = unlocked.total,

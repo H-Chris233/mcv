@@ -4,6 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.multicardvault.core.toStableHex
+import app.multicardvault.features.cards.CardVerificationResult
+import app.multicardvault.features.cards.InspectCardUseCase
+import app.multicardvault.features.cards.RecoverInterruptedReissueUseCase
+import app.multicardvault.features.cards.StartCardSetReissueUseCase
+import app.multicardvault.features.cards.VerifyCardSetUseCase
 import app.multicardvault.features.unlock.NotEnoughCardsException
 import app.multicardvault.features.unlock.UnlockVaultUseCase
 import app.multicardvault.features.unlock.UnlockedVaultSummary
@@ -58,6 +63,24 @@ sealed interface CreateVaultUiState {
         val threshold: Int,
     ) : CreateVaultUiState
 
+    data class VerifyingCard(
+        val summary: CreatedVaultSummary,
+        val currentSchemeIdHex: String,
+        val scannedShareIndexes: Set<Int>,
+        val message: String,
+    ) : CreateVaultUiState
+
+    data class CardVerified(
+        val summary: CreatedVaultSummary,
+        val result: CardVerificationResult,
+    ) : CreateVaultUiState
+
+    data class RecoveringInterruptedReissue(
+        val readCount: Int,
+        val threshold: Int,
+        val message: String,
+    ) : CreateVaultUiState
+
     data class Unlocked(
         val summary: CreatedVaultSummary,
         val unlocked: UnlockedVaultSummary,
@@ -84,6 +107,10 @@ class CreateVaultViewModel(
     private val listVaultsUseCase: ListVaultsUseCase,
     private val unlockVaultUseCase: UnlockVaultUseCase,
     private val updateVaultUseCase: UpdateVaultUseCase,
+    private val inspectCardUseCase: InspectCardUseCase,
+    private val verifyCardSetUseCase: VerifyCardSetUseCase,
+    private val startCardSetReissueUseCase: StartCardSetReissueUseCase,
+    private val recoverInterruptedReissueUseCase: RecoverInterruptedReissueUseCase,
     private val appSettingsRepository: AppSettingsRepository,
     private val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val entryIdGenerator: () -> String = { generateEntryIdHex() },
@@ -105,6 +132,25 @@ class CreateVaultViewModel(
     private var pendingUnlockedAfterRewrite: CreateVaultUiState.Unlocked? = null
     private val writtenPayloadIndexes = mutableSetOf<Int>()
     private val scannedPayloads = mutableListOf<ByteArray>()
+    private val cardLifecycle =
+        CardLifecycleViewModelDelegate(
+            inspectCardUseCase = inspectCardUseCase,
+            verifyCardSetUseCase = verifyCardSetUseCase,
+            startCardSetReissueUseCase = startCardSetReissueUseCase,
+            recoverInterruptedReissueUseCase = recoverInterruptedReissueUseCase,
+            workDispatcher = workDispatcher,
+            scope = viewModelScope,
+            getState = { _uiState.value },
+            setState = { _uiState.value = it },
+            getForm = { _form.value },
+            setCurrentSession = { currentSession = it },
+            setPendingUnlockedAfterRewrite = { pendingUnlockedAfterRewrite = it },
+            clearWrittenPayloadIndexes = { writtenPayloadIndexes.clear() },
+            canStartCardReading = { canStartCardReading() },
+            unlockScannedCards = ::unlockScannedCards,
+            scannedPayloads = scannedPayloads,
+            clock = clock,
+        )
 
     init {
         refreshSavedVaults()
@@ -233,6 +279,8 @@ class CreateVaultViewModel(
             }
 
             is CreateVaultUiState.ReadingCards -> NfcCommand.Read
+            is CreateVaultUiState.VerifyingCard -> NfcCommand.Read
+            is CreateVaultUiState.RecoveringInterruptedReissue -> NfcCommand.Read
             else -> null
         }
     }
@@ -241,9 +289,18 @@ class CreateVaultViewModel(
         when (val state = _uiState.value) {
             is CreateVaultUiState.WritingCards -> handleWriteResult(state, result)
             is CreateVaultUiState.ReadingCards -> handleReadResult(state, result)
+            is CreateVaultUiState.VerifyingCard -> cardLifecycle.handleVerifyResult(state, result, ::nfcMessage)
+            is CreateVaultUiState.RecoveringInterruptedReissue ->
+                cardLifecycle.handleInterruptedRecoveryResult(state, result, ::nfcMessage)
             else -> Unit
         }
     }
+
+    fun startVerifyCurrentCard() = cardLifecycle.startVerifyCurrentCard()
+
+    fun startCardSetReissue() = cardLifecycle.startCardSetReissue()
+
+    fun startInterruptedReissueRecovery() = cardLifecycle.startInterruptedReissueRecovery()
 
     fun updateEntryTitle(value: String) {
         _uiState.update { state ->
@@ -590,6 +647,8 @@ class CreateVaultViewModel(
             is CreateVaultUiState.WritingCards -> false
             is CreateVaultUiState.ReadingCards -> false
             is CreateVaultUiState.Unlocking -> false
+            is CreateVaultUiState.VerifyingCard -> false
+            is CreateVaultUiState.RecoveringInterruptedReissue -> false
             else -> true
         }
 
@@ -616,6 +675,10 @@ class CreateVaultViewModel(
         private val listVaultsUseCase: ListVaultsUseCase,
         private val unlockVaultUseCase: UnlockVaultUseCase,
         private val updateVaultUseCase: UpdateVaultUseCase,
+        private val inspectCardUseCase: InspectCardUseCase,
+        private val verifyCardSetUseCase: VerifyCardSetUseCase,
+        private val startCardSetReissueUseCase: StartCardSetReissueUseCase,
+        private val recoverInterruptedReissueUseCase: RecoverInterruptedReissueUseCase,
         private val appSettingsRepository: AppSettingsRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -626,6 +689,10 @@ class CreateVaultViewModel(
                 listVaultsUseCase = listVaultsUseCase,
                 unlockVaultUseCase = unlockVaultUseCase,
                 updateVaultUseCase = updateVaultUseCase,
+                inspectCardUseCase = inspectCardUseCase,
+                verifyCardSetUseCase = verifyCardSetUseCase,
+                startCardSetReissueUseCase = startCardSetReissueUseCase,
+                recoverInterruptedReissueUseCase = recoverInterruptedReissueUseCase,
                 appSettingsRepository = appSettingsRepository,
             ) as T
         }

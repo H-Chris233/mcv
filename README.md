@@ -16,10 +16,12 @@ This repository currently contains:
 
 - Rust multi-crate workspace.
 - Rust protocol core for create/unlock/update flows.
-- Android Compose app with Rust UniFFI integration, Room metadata persistence, DataStore settings, MIFARE Classic 1K CUID card write/read/unlock/recovery, saved Vault metadata list, diagnostics, and a minimal vault entry editor.
+- Android Compose app with Rust UniFFI integration, Room metadata persistence, local Card Inventory metadata, DataStore settings, MIFARE Classic 1K CUID card write/read/unlock/recovery, saved Vault metadata list, diagnostics, and a minimal vault entry editor.
 - Protocol documentation, threat model, ADRs, test vectors, and CI workflows.
 
-The v0.1 MVP can write generated encrypted Card Payloads to CUID Cards, read threshold cards back, recover the Vault Blob from card Data Fragments, unlock the Vault with or without pre-existing local metadata, display Vault Plaintext entries, add/edit/delete simple text entries through Rust `update_vault`, rewrite all cards after an update, keep non-recovery Vault metadata in Room, persist lightweight settings in DataStore, and produce release artifacts through CI. It does not implement full multi-vault navigation or app-restart recovery for an interrupted write-card flow yet.
+The Card Lifecycle Foundation can write generated encrypted Card Payloads to CUID Cards, read threshold cards back, recover the Vault Blob from card Data Fragments, unlock the Vault with or without pre-existing local metadata, inspect Card Payload metadata without persisting full payloads, verify cards against the current Card Set, keep local Card Inventory metadata, add/edit/delete simple text entries through Rust `update_vault`, rewrite all cards after an update, perform whole Card Set Reissue, recover from interrupted reissue by rescanning physical cards, keep non-recovery Vault metadata in Room, persist lightweight settings in DataStore, and produce release artifacts through CI.
+
+New Vault creation is constrained to safe threshold presets (`2-of-3` and `3-of-5`). The current app still uses a single-screen functional UI and does not implement full multi-vault navigation, cloud sync, backup import/export, single-card patching, or recovery from cached full Card Payloads.
 
 ## Repository Layout
 
